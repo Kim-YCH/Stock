@@ -73,6 +73,11 @@ const pages = {
   }
 };
 
+const CACHE_KEYS = {
+  dashboard: "stocklab_dashboard_cache_v1",
+  transactions: "stocklab_transactions_cache_v1"
+};
+
 document.addEventListener("DOMContentLoaded", () => {
   detectDeviceMode();
   window.addEventListener("resize", detectDeviceMode);
@@ -219,6 +224,89 @@ function setApiStatus(message) {
   el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，未顯示模擬行情";
 }
 
+function readCache(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.data ? parsed.data : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function writeCache(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      savedAt: Date.now(),
+      data
+    }));
+  } catch (err) {
+    // localStorage 可能被瀏覽器限制；失敗時不影響主要流程。
+  }
+}
+
+function getCachedDashboard() {
+  return readCache(CACHE_KEYS.dashboard);
+}
+
+function saveDashboardCache(data) {
+  writeCache(CACHE_KEYS.dashboard, data);
+}
+
+function getCachedTransactions() {
+  return readCache(CACHE_KEYS.transactions);
+}
+
+function saveTransactionsCache(data) {
+  writeCache(CACHE_KEYS.transactions, data);
+}
+
+function addCachedTransaction(item) {
+  const cached = getCachedTransactions() || { ok: true, items: [] };
+  cached.items = [item].concat(cached.items || []);
+  saveTransactionsCache(cached);
+  renderTransactions(cached.items);
+}
+
+function removeCachedTransaction(id) {
+  const cached = getCachedTransactions();
+  if (!cached) return;
+  cached.items = (cached.items || []).filter(item => String(item.id || "") !== String(id));
+  saveTransactionsCache(cached);
+  renderTransactions(cached.items);
+}
+
+function upsertCachedWatchlistItem(item) {
+  const cached = getCachedDashboard() || { ok: true, market: [], watchlist: [] };
+  const symbol = String(item.symbol || "").trim();
+  const list = (cached.watchlist || []).filter(row => String(row.symbol || "").trim() !== symbol);
+  cached.watchlist = [item].concat(list);
+  saveDashboardCache(cached);
+  renderDashboard(cached);
+}
+
+function replaceCachedWatchlistItem(symbol, nextItem) {
+  const cached = getCachedDashboard();
+  if (!cached) return;
+  const target = String(symbol || "").trim();
+  cached.watchlist = (cached.watchlist || []).map(item => {
+    if (String(item.symbol || "").trim() !== target) return item;
+    return Object.assign({}, item, nextItem, { pending: false });
+  });
+  saveDashboardCache(cached);
+  renderDashboard(cached);
+}
+
+function removeCachedWatchlistItem(symbol) {
+  const cached = getCachedDashboard();
+  if (!cached) return;
+  const target = String(symbol || "").trim();
+  cached.watchlist = (cached.watchlist || []).filter(item => String(item.symbol || "").trim() !== target);
+  saveDashboardCache(cached);
+  renderDashboard(cached);
+}
+
 function toggleWatchForm(forceOpen) {
   const form = document.getElementById("watchlistForm");
   const shouldOpen = forceOpen === true ? true : form.classList.contains("hidden");
@@ -237,20 +325,49 @@ async function onSubmitWatchlist(event) {
   payload.backfill = formData.has("backfill") ? "true" : "false";
 
   const message = document.getElementById("watchFormMessage");
+  const symbol = String(payload.symbol || "").trim();
+  if (!symbol) {
+    message.textContent = "請輸入股票代號";
+    return;
+  }
+
+  upsertCachedWatchlistItem({
+    symbol,
+    name: "",
+    trendText: "同步中",
+    signalSummary: "後端查詢股票名稱中",
+    pending: true
+  });
+  message.textContent = "已先加入畫面，正在同步...";
 
   try {
-    message.textContent = "加入中...";
     const result = await Api.addWatchlist(payload);
-    message.textContent = result.message || "已加入關注股票";
+    const stock = result.stock || {};
+    replaceCachedWatchlistItem(symbol, {
+      symbol: stock.symbol || symbol,
+      name: stock.name || "",
+      trendText: "觀察",
+      signalSummary: ""
+    });
+    message.textContent = result.warning
+      ? `${result.message || "已加入關注股票"}：${result.warning}`
+      : (result.message || "已加入關注股票");
     form.reset();
     form.querySelector("input[name='backfill']").checked = true;
     await loadDashboard();
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
+    removeCachedWatchlistItem(symbol);
   }
 }
 
 async function onDocumentClick(event) {
+  const txBtn = event.target.closest('[data-action="delete-transaction"]');
+  if (txBtn) {
+    await onDeleteTransaction(txBtn);
+    return;
+  }
+
   const btn = event.target.closest('[data-action="remove-watchlist"]');
   if (!btn) return;
 
@@ -260,6 +377,8 @@ async function onDocumentClick(event) {
 
   const ok = confirm(`確定要移除 ${displaySymbol(symbol, name)} ${name} 嗎？`);
   if (!ok) return;
+
+  removeCachedWatchlistItem(symbol);
 
   try {
     btn.disabled = true;
@@ -291,15 +410,26 @@ function changePage(pageName) {
 }
 
 async function loadDashboard() {
-  let data;
-  try {
-    data = await Api.getDashboard();
-    setApiStatus("API 已連線");
-  } catch (err) {
-    data = Mock.dashboard;
-    setApiStatus("API 未連線 / 呼叫失敗：" + err.message);
+  const cached = getCachedDashboard();
+  if (cached) {
+    renderDashboard(cached);
+    setApiStatus("已載入快取，正在更新...");
   }
 
+  try {
+    const data = await Api.getDashboard();
+    saveDashboardCache(data);
+    renderDashboard(data);
+    setApiStatus("API 已連線");
+  } catch (err) {
+    if (!cached) {
+      renderDashboard(Mock.dashboard);
+    }
+    setApiStatus("API 未連線 / 呼叫失敗：" + err.message);
+  }
+}
+
+function renderDashboard(data) {
   renderMarketCards(data.market || []);
   renderWatchlist(data.watchlist || []);
 }
@@ -459,17 +589,31 @@ async function loadAnalysis(symbol) {
 }
 
 async function loadTransactions() {
-  let data;
-  try {
-    data = await Api.getTransactions();
-    setApiStatus("API 已連線");
-  } catch (err) {
-    data = Mock.transactions;
-    setApiStatus(err.message);
+  const cached = getCachedTransactions();
+  if (cached) {
+    renderTransactions(cached.items || []);
+    setApiStatus("已載入交易快取，正在更新...");
   }
 
-  const items = data.items || [];
-  document.getElementById("transactionsBody").innerHTML = items.map(item => `
+  try {
+    const data = await Api.getTransactions();
+    saveTransactionsCache(data);
+    renderTransactions(data.items || []);
+    setApiStatus("API 已連線");
+  } catch (err) {
+    if (!cached) {
+      renderTransactions(Mock.transactions.items || []);
+    }
+    setApiStatus(err.message);
+  }
+}
+
+function renderTransactions(items) {
+  document.getElementById("transactionsBody").innerHTML = (items || []).map(item => {
+    const id = escapeHtml(String(item.id || ""));
+    const disabled = item.pending ? "disabled" : "";
+    const statusText = item.pending ? "同步中" : "刪除";
+    return `
     <tr>
       <td data-label="日期">${escapeHtml(item.date || "")}</td>
       <td data-label="類型">${escapeHtml(item.action || "")}</td>
@@ -479,8 +623,10 @@ async function loadTransactions() {
       <td data-label="手續費">${number(item.fee)}</td>
       <td data-label="稅">${number(item.tax)}</td>
       <td data-label="備註">${escapeHtml(item.note || "")}</td>
+      <td data-label="操作"><button class="danger-btn" type="button" data-action="delete-transaction" data-id="${id}" ${disabled}>${statusText}</button></td>
     </tr>
-  `).join("");
+  `;
+  }).join("");
 }
 
 async function onSubmitTransaction(event) {
@@ -495,16 +641,61 @@ async function onSubmitTransaction(event) {
   payload.currency = "TWD";
 
   const message = document.getElementById("formMessage");
+  const optimisticItem = {
+    id: "PENDING_" + Date.now(),
+    date: payload.date,
+    action: payload.tradeAction,
+    symbol: payload.symbol,
+    name: "",
+    quantity: payload.quantity,
+    price: payload.price,
+    fee: payload.fee,
+    tax: payload.tax,
+    note: payload.note,
+    pending: true
+  };
+
+  addCachedTransaction(optimisticItem);
+  message.textContent = "已先加入畫面，正在同步...";
+  form.reset();
+  const dateInput = document.querySelector("input[name='date']");
+  if (dateInput) dateInput.valueAsDate = new Date();
 
   try {
     await Api.addTransaction(payload);
     message.textContent = "新增成功";
-    form.reset();
-    const dateInput = document.querySelector("input[name='date']");
-    if (dateInput) dateInput.valueAsDate = new Date();
     await loadTransactions();
   } catch (err) {
     message.textContent = "新增失敗：" + err.message;
+    removeCachedTransaction(optimisticItem.id);
+  }
+}
+
+async function onDeleteTransaction(btn) {
+  const id = btn.dataset.id;
+  if (!id) return;
+
+  const ok = confirm("確定要刪除這筆交易紀錄嗎？");
+  if (!ok) return;
+
+  const cached = getCachedTransactions();
+  if (cached) {
+    cached.items = (cached.items || []).filter(item => String(item.id || "") !== id);
+    saveTransactionsCache(cached);
+    renderTransactions(cached.items || []);
+  }
+
+  try {
+    btn.disabled = true;
+    setApiStatus("正在刪除交易紀錄...");
+    await Api.deleteTransaction(id);
+    setApiStatus("已刪除交易紀錄");
+    await loadTransactions();
+  } catch (err) {
+    setApiStatus("刪除交易失敗：" + err.message);
+    await loadTransactions();
+  } finally {
+    btn.disabled = false;
   }
 }
 

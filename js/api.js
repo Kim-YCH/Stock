@@ -76,6 +76,7 @@ const Api = (() => {
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
     calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),
-    addTransaction: (data) => jsonp("addTransaction", data)
+    addTransaction: (data) => jsonp("addTransaction", data),
+    deleteTransaction: (id) => jsonp("deleteTransaction", { id })
   };
 })();
