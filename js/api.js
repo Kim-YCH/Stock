@@ -43,7 +43,12 @@ const Api = (() => {
       window[callbackName] = (data) => {
         cleanup();
         if (data && data.ok === false) {
-          reject(new Error(data.message || "API 回傳錯誤"));
+          const message = String(data.message || "API 回傳錯誤");
+          if (message.includes("Unknown action")) {
+            reject(new Error("Apps Script 後端尚未部署新版，請更新 Web App 後再試。"));
+            return;
+          }
+          reject(new Error(message));
           return;
         }
         resolve(data);

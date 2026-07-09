@@ -510,6 +510,8 @@ async function onSubmitTransaction(event) {
   const form = event.currentTarget;
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
+  payload.tradeAction = payload.action;
+  delete payload.action;
   payload.market = "TW";
   payload.currency = "TWD";
 
