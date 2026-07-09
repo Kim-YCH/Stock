@@ -1,0 +1,45 @@
+真實盤後資料更新版說明
+=====================
+
+這版已補入 TWSE / TPEX 官方盤後資料抓取功能。
+
+主要新增函式：
+
+1. updateDailyPrices()
+   手動或排程執行。
+   抓取上市 / 上櫃盤後價格，寫入 Prices，然後重新計算 Indicators / Signals / Portfolio。
+
+2. createDailyPriceTrigger()
+   建立每天晚上 20:00 的自動更新排程。
+
+3. deleteDailyPriceTriggers()
+   刪除 updateDailyPrices 的排程。
+
+4. fetchTwseDailyPrices_()
+   抓上市股票每日收盤行情。
+
+5. fetchTpexDailyPrices_()
+   抓上櫃股票每日收盤行情。
+
+6. updateTwseMarketIndex_()
+   抓加權指數 TAIEX。
+
+使用方式：
+
+第一次：
+1. 到 Google Sheets -> Apps Script。
+2. 貼上 apps_script/Code.gs。
+3. 執行 setupDatabase()。
+4. 執行 updateDailyPrices() 測試是否抓得到資料。
+5. 前端 config.js 填入 Apps Script Web App URL。
+
+每天：
+1. 可以手動執行 updateDailyPrices()。
+2. 或執行一次 createDailyPriceTrigger()，之後每天自動更新。
+
+注意：
+- 這是盤後資料，不是即時報價。
+- 預設只抓 Stocks / Watchlist / Portfolio 出現的股票。
+- 第一次只有一天真實資料時，MA20 / MA60 不會完整，需要累積資料。
+- 如果你想抓全部上市上櫃，可以把 Code.gs 的 CONFIG.FETCH_ONLY_MY_SYMBOLS 改成 false。
+- 櫃買指數不同資料源欄位比較不穩，本版先保留手動或後續補強，股票價格已補。
