@@ -334,6 +334,75 @@ button:hover {
   background: rgba(56, 189, 248, 0.26);
 }
 
+.danger-btn {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+.danger-btn:hover {
+  background: rgba(239, 68, 68, 0.24);
+}
+
+.hidden {
+  display: none !important;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  padding: 16px;
+  border: 1px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 14px;
+  color: var(--muted);
+}
+
+.watch-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  background: rgba(2, 6, 23, 0.52);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+}
+
+.watch-form label,
+.watch-symbol-row label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.watch-form .full {
+  grid-column: 1 / -1;
+}
+
+.watch-symbol-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.check-label {
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.check-label input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -477,20 +546,6 @@ button:hover {
   gap: 10px;
 }
 
-.device-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 58px;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: rgba(56, 189, 248, 0.10);
-  color: var(--blue);
-  border-radius: 999px;
-  padding: 7px 10px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
 body.device-mobile .chart-wrap {
   height: 300px;
 }
@@ -545,7 +600,6 @@ body.device-mobile .table-wrap table {
     font-weight: 700;
   }
 
-  .device-badge,
   #apiStatus {
     grid-column: 1 / -1;
     width: 100%;
@@ -641,6 +695,21 @@ body.device-mobile .table-wrap table {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr auto;
+  }
+
+  .watch-form,
+  .watch-symbol-row {
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .empty-state {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .danger-btn {
+    min-width: 96px;
   }
 
   input,

@@ -1,4 +1,4 @@
-﻿symbol,name,market,note,target_price,alert_price,enabled
-2330,台積電,TW,核心觀察,,,TRUE
-2317,鴻海,TW,盤整觀察,,,TRUE
-006208,富邦台50,TW,ETF,,,TRUE
+symbol,name,market,currency,type,note,target_price,alert_price,enabled,createdAt,updatedAt
+2330,台積電,TW,TWD,stock,核心觀察,,,TRUE,,
+2317,鴻海,TW,TWD,stock,盤整觀察,,,TRUE,,
+006208,富邦台50,TW,TWD,ETF,ETF,,,TRUE,,

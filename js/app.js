@@ -87,8 +87,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
   document.getElementById("btnBackfillHistory").addEventListener("click", onBackfillHistoricalPrices);
-  document.getElementById("btnClearDemo").addEventListener("click", onClearDemoData);
-  document.getElementById("btnRepairSymbols").addEventListener("click", onRepairSymbolCodes);
+  document.getElementById("btnRefreshVersion").addEventListener("click", refreshAppVersion);
+  document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
+  document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
+  document.getElementById("btnLookupStock").addEventListener("click", onLookupWatchStock);
+  document.getElementById("watchlistForm").addEventListener("submit", onSubmitWatchlist);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
 
@@ -104,11 +107,6 @@ function detectDeviceMode() {
   const isMobile = window.matchMedia("(max-width: 760px), (pointer: coarse)").matches;
   document.body.classList.toggle("device-mobile", isMobile);
   document.body.classList.toggle("device-desktop", !isMobile);
-
-  const badge = document.getElementById("deviceBadge");
-  if (badge) {
-    badge.textContent = isMobile ? "手機版" : "電腦版";
-  }
 }
 
 
@@ -176,60 +174,39 @@ async function onBackfillHistoricalPrices() {
   }
 }
 
-
-
-async function onClearDemoData() {
-  const btn = document.getElementById("btnClearDemo");
-  if (!Api.isConfigured()) {
-    setApiStatus("尚未設定 API_BASE_URL，無法清除 Google Sheets 範例資料");
-    return;
-  }
-
-  const ok = confirm("確定要清除舊版範例資料嗎？\n這會移除 T_SAMPLE_* 交易，以及舊版 2026 範例大盤/價格資料。");
-  if (!ok) return;
-
-  btn.disabled = true;
-  const oldText = btn.textContent;
-  btn.textContent = "清除中...";
+async function refreshAppVersion() {
+  const confirmed = confirm("要重新載入最新版本嗎？");
+  if (!confirmed) return;
 
   try {
-    const result = await Api.clearDemoData();
-    setApiStatus(`範例資料已清除：大盤 ${result.marketIndexRemoved || 0}，價格 ${result.pricesRemoved || 0}，交易 ${result.transactionsRemoved || 0}`);
-    await loadDashboard();
-  } catch (err) {
-    setApiStatus("清除失敗：" + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = oldText;
+    setApiStatus("正在更新版本...");
+
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(key => caches.delete(key)));
+    }
+
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+
+      for (const registration of registrations) {
+        if (registration.update) {
+          await registration.update();
+        }
+      }
+    }
+
+    reloadWithVersionStamp();
+  } catch (error) {
+    console.error(error);
+    reloadWithVersionStamp();
   }
 }
 
-
-
-async function onRepairSymbolCodes() {
-  const btn = document.getElementById("btnRepairSymbols");
-  if (!Api.isConfigured()) {
-    setApiStatus("尚未設定 API_BASE_URL，無法修正 Google Sheets 股票代號");
-    return;
-  }
-
-  const ok = confirm("確定要修正股票代號嗎？\n用途：把 Google Sheets 中被吃掉前導 0 的 ETF 代號修回來，例如 6208 + 富邦台50 → 006208。");
-  if (!ok) return;
-
-  btn.disabled = true;
-  const oldText = btn.textContent;
-  btn.textContent = "修正中...";
-
-  try {
-    const result = await Api.repairSymbolCodes();
-    setApiStatus(`代號修正完成：修正 ${result.changed || 0} 格，請再按「回補歷史資料」或「更新盤後資料」`);
-    await loadDashboard();
-  } catch (err) {
-    setApiStatus("代號修正失敗：" + err.message);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = oldText;
-  }
+function reloadWithVersionStamp() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", Date.now().toString());
+  window.location.href = url.toString();
 }
 
 function setApiStatus(message) {
@@ -240,6 +217,78 @@ function setApiStatus(message) {
   }
 
   el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，未顯示模擬行情";
+}
+
+function toggleWatchForm(forceOpen) {
+  const form = document.getElementById("watchlistForm");
+  const shouldOpen = forceOpen === true ? true : form.classList.contains("hidden");
+  form.classList.toggle("hidden", !shouldOpen);
+  if (shouldOpen) {
+    document.getElementById("watchSymbol").focus();
+  }
+}
+
+async function onLookupWatchStock() {
+  const symbolInput = document.getElementById("watchSymbol");
+  const nameInput = document.getElementById("watchName");
+  const message = document.getElementById("watchFormMessage");
+  const symbol = symbolInput.value.trim();
+
+  if (!symbol) {
+    message.textContent = "請先輸入股票代號";
+    return;
+  }
+
+  try {
+    message.textContent = "查詢中...";
+    const result = await Api.lookupStock(symbol);
+    const stock = result.stock || {};
+    symbolInput.value = stock.symbol || symbol;
+    nameInput.value = stock.name || "";
+    message.textContent = stock.name ? `已找到 ${stock.name}` : "已找到股票";
+  } catch (err) {
+    nameInput.value = "";
+    message.textContent = err.message || "查詢失敗";
+  }
+}
+
+async function onSubmitWatchlist(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const payload = Object.fromEntries(formData.entries());
+  payload.backfill = formData.has("backfill") ? "true" : "false";
+  payload.market = "TW";
+  payload.currency = "TWD";
+
+  const message = document.getElementById("watchFormMessage");
+
+  try {
+    message.textContent = "加入中...";
+    const result = await Api.addWatchlist(payload);
+    message.textContent = result.message || "已加入關注股票";
+    form.reset();
+    document.getElementById("watchName").value = "";
+    form.querySelector("input[name='backfill']").checked = true;
+    await loadDashboard();
+  } catch (err) {
+    message.textContent = "加入失敗：" + err.message;
+  }
+}
+
+async function onRemoveWatchlist(symbol, name) {
+  const ok = confirm(`確定要移除 ${displaySymbol(symbol, name)} ${name || ""} 嗎？`);
+  if (!ok) return;
+
+  try {
+    setApiStatus("正在移除關注股票...");
+    await Api.removeWatchlist(symbol);
+    setApiStatus("已移除關注股票");
+    await loadDashboard();
+  } catch (err) {
+    setApiStatus("移除失敗：" + err.message);
+  }
 }
 
 function changePage(pageName) {
@@ -310,8 +359,20 @@ function renderMarketCards(items) {
 
 function renderWatchlist(items) {
   const tbody = document.getElementById("watchlistBody");
-  tbody.innerHTML = items.map(item => {
+  const empty = document.getElementById("emptyWatchlist");
+  const visibleItems = (items || []).filter(item => item.enabled === undefined || item.enabled === true || String(item.enabled).toUpperCase() === "TRUE" || item.enabled === "");
+
+  empty.classList.toggle("hidden", visibleItems.length > 0);
+
+  if (!visibleItems.length) {
+    tbody.innerHTML = "";
+    return;
+  }
+
+  tbody.innerHTML = visibleItems.map(item => {
     const badgeClass = getBadgeClass(item.trendText);
+    const safeSymbol = escapeHtml(String(item.symbol || ""));
+    const safeName = escapeHtml(String(item.name || ""));
     return `
       <tr>
         <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
@@ -322,9 +383,14 @@ function renderWatchlist(items) {
         <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(item.trendText || "觀察")}</span></td>
         <td data-label="訊號">${escapeHtml(item.signalSummary || "")}</td>
         <td data-label="迷你線圖" class="td-sparkline">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</td>
+        <td data-label="操作"><button class="danger-btn" type="button" data-remove-symbol="${safeSymbol}" data-remove-name="${safeName}">移除</button></td>
       </tr>
     `;
   }).join("");
+
+  tbody.querySelectorAll("[data-remove-symbol]").forEach(btn => {
+    btn.addEventListener("click", () => onRemoveWatchlist(btn.dataset.removeSymbol, btn.dataset.removeName));
+  });
 }
 
 async function loadPortfolio() {
@@ -433,7 +499,6 @@ async function loadTransactions() {
       <td data-label="價格">${number(item.price)}</td>
       <td data-label="手續費">${number(item.fee)}</td>
       <td data-label="稅">${number(item.tax)}</td>
-      <td data-label="幣別">${escapeHtml(item.currency || "")}</td>
       <td data-label="備註">${escapeHtml(item.note || "")}</td>
     </tr>
   `).join("");
@@ -445,6 +510,8 @@ async function onSubmitTransaction(event) {
   const form = event.currentTarget;
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
+  payload.market = "TW";
+  payload.currency = "TWD";
 
   const message = document.getElementById("formMessage");
 

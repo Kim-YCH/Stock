@@ -65,10 +65,11 @@ const Api = (() => {
     getPortfolio: () => jsonp("portfolio"),
     getAnalysis: (symbol) => jsonp("analysis", { symbol }),
     getTransactions: () => jsonp("transactions"),
+    lookupStock: (symbol) => jsonp("lookupStock", { symbol }),
+    addWatchlist: (data) => jsonp("addWatchlist", data),
+    removeWatchlist: (symbol) => jsonp("removeWatchlist", { symbol }),
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
-    clearDemoData: () => jsonp("clearDemoData"),
-    repairSymbolCodes: () => jsonp("repairSymbolCodes"),
     calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),
     addTransaction: (data) => jsonp("addTransaction", data)
   };

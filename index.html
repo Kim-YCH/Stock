@@ -31,9 +31,7 @@
         <div class="top-actions">
           <button id="btnUpdateDaily">更新盤後資料</button>
           <button id="btnBackfillHistory">回補歷史資料</button>
-          <button id="btnClearDemo">清除範例資料</button>
-          <button id="btnRepairSymbols">修正代號</button>
-          <span class="device-badge" id="deviceBadge">偵測中</span>
+          <button id="btnRefreshVersion">更新版本</button>
           <div class="muted" id="apiStatus">尚未連線</div>
         </div>
       </div>
@@ -47,6 +45,31 @@
               <h2>我的關注股票</h2>
               <div class="muted">首頁建議放迷你線圖，快速看方向</div>
             </div>
+            <button id="btnToggleWatchForm">＋ 新增關注股票</button>
+          </div>
+
+          <form id="watchlistForm" class="watch-form hidden">
+            <div class="watch-symbol-row">
+              <label>股票代號<input id="watchSymbol" name="symbol" type="text" required placeholder="006208" autocomplete="off" /></label>
+              <button id="btnLookupStock" type="button">查詢</button>
+            </div>
+            <label>股票名稱<input id="watchName" name="name" type="text" readonly placeholder="查詢後自動帶入" /></label>
+            <label class="full">備註<input name="note" type="text" placeholder="ETF 長期觀察" /></label>
+            <label>目標價<input name="target_price" type="number" step="0.0001" placeholder="250" /></label>
+            <label>提醒價<input name="alert_price" type="number" step="0.0001" placeholder="230" /></label>
+            <label class="check-label full">
+              <input name="backfill" type="checkbox" checked />
+              加入後自動回補歷史資料
+            </label>
+            <div class="form-actions full">
+              <button type="submit">加入關注股票</button>
+              <span id="watchFormMessage" class="muted"></span>
+            </div>
+          </form>
+
+          <div id="emptyWatchlist" class="empty-state hidden">
+            <div>目前尚未加入關注股票</div>
+            <button id="btnEmptyAddWatch">新增關注股票</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -60,6 +83,7 @@
                   <th>狀態</th>
                   <th>訊號</th>
                   <th>迷你線圖</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody id="watchlistBody"></tbody>
@@ -157,22 +181,10 @@
             </label>
             <label>股票代號<input name="symbol" required placeholder="2330" /></label>
             <label>股票名稱<input name="name" placeholder="台積電" /></label>
-            <label>市場
-              <select name="market">
-                <option value="TW">TW</option>
-                <option value="US">US</option>
-              </select>
-            </label>
             <label>股數<input name="quantity" type="number" step="0.0001" required /></label>
             <label>價格<input name="price" type="number" step="0.0001" required /></label>
             <label>手續費<input name="fee" type="number" step="0.0001" value="0" /></label>
             <label>稅<input name="tax" type="number" step="0.0001" value="0" /></label>
-            <label>幣別
-              <select name="currency">
-                <option value="TWD">TWD</option>
-                <option value="USD">USD</option>
-              </select>
-            </label>
             <label class="full">備註<input name="note" placeholder="長期投資 / 短線觀察" /></label>
             <div class="form-actions full">
               <button type="submit">新增交易</button>
@@ -194,7 +206,6 @@
                   <th>價格</th>
                   <th>手續費</th>
                   <th>稅</th>
-                  <th>幣別</th>
                   <th>備註</th>
                 </tr>
               </thead>
