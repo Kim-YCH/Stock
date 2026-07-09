@@ -90,8 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnRefreshVersion").addEventListener("click", refreshAppVersion);
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
   document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
-  document.getElementById("btnLookupStock").addEventListener("click", onLookupWatchStock);
   document.getElementById("watchlistForm").addEventListener("submit", onSubmitWatchlist);
+  document.addEventListener("click", onDocumentClick);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
 
@@ -228,30 +228,6 @@ function toggleWatchForm(forceOpen) {
   }
 }
 
-async function onLookupWatchStock() {
-  const symbolInput = document.getElementById("watchSymbol");
-  const nameInput = document.getElementById("watchName");
-  const message = document.getElementById("watchFormMessage");
-  const symbol = symbolInput.value.trim();
-
-  if (!symbol) {
-    message.textContent = "請先輸入股票代號";
-    return;
-  }
-
-  try {
-    message.textContent = "查詢中...";
-    const result = await Api.lookupStock(symbol);
-    const stock = result.stock || {};
-    symbolInput.value = stock.symbol || symbol;
-    nameInput.value = stock.name || "";
-    message.textContent = stock.name ? `已找到 ${stock.name}` : "已找到股票";
-  } catch (err) {
-    nameInput.value = "";
-    message.textContent = err.message || "查詢失敗";
-  }
-}
-
 async function onSubmitWatchlist(event) {
   event.preventDefault();
 
@@ -259,8 +235,6 @@ async function onSubmitWatchlist(event) {
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
   payload.backfill = formData.has("backfill") ? "true" : "false";
-  payload.market = "TW";
-  payload.currency = "TWD";
 
   const message = document.getElementById("watchFormMessage");
 
@@ -269,7 +243,6 @@ async function onSubmitWatchlist(event) {
     const result = await Api.addWatchlist(payload);
     message.textContent = result.message || "已加入關注股票";
     form.reset();
-    document.getElementById("watchName").value = "";
     form.querySelector("input[name='backfill']").checked = true;
     await loadDashboard();
   } catch (err) {
@@ -277,17 +250,27 @@ async function onSubmitWatchlist(event) {
   }
 }
 
-async function onRemoveWatchlist(symbol, name) {
-  const ok = confirm(`確定要移除 ${displaySymbol(symbol, name)} ${name || ""} 嗎？`);
+async function onDocumentClick(event) {
+  const btn = event.target.closest('[data-action="remove-watchlist"]');
+  if (!btn) return;
+
+  const symbol = btn.dataset.symbol;
+  const name = btn.dataset.name || "";
+  if (!symbol) return;
+
+  const ok = confirm(`確定要移除 ${displaySymbol(symbol, name)} ${name} 嗎？`);
   if (!ok) return;
 
   try {
+    btn.disabled = true;
     setApiStatus("正在移除關注股票...");
     await Api.removeWatchlist(symbol);
     setApiStatus("已移除關注股票");
     await loadDashboard();
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -383,14 +366,10 @@ function renderWatchlist(items) {
         <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(item.trendText || "觀察")}</span></td>
         <td data-label="訊號">${escapeHtml(item.signalSummary || "")}</td>
         <td data-label="迷你線圖" class="td-sparkline">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</td>
-        <td data-label="操作"><button class="danger-btn" type="button" data-remove-symbol="${safeSymbol}" data-remove-name="${safeName}">移除</button></td>
+        <td data-label="操作"><button class="danger-btn" type="button" data-action="remove-watchlist" data-symbol="${safeSymbol}" data-name="${safeName}">移除</button></td>
       </tr>
     `;
   }).join("");
-
-  tbody.querySelectorAll("[data-remove-symbol]").forEach(btn => {
-    btn.addEventListener("click", () => onRemoveWatchlist(btn.dataset.removeSymbol, btn.dataset.removeName));
-  });
 }
 
 async function loadPortfolio() {
@@ -634,15 +613,7 @@ function summaryCard(title, value, cls) {
 
 
 function displaySymbol(symbol, name) {
-  const raw = String(symbol ?? "").trim();
-  const stockName = String(name ?? "").trim();
-
-  // 防止 Google Sheets 把 ETF 前導 0 吃掉後，前端顯示成 6208。
-  // 這裡只處理已知名稱，避免把真正的個股 6208 誤改。
-  if (raw === "6208" && stockName.includes("富邦台50")) return "006208";
-  if (raw === "50" && stockName.includes("元大台灣50")) return "0050";
-
-  return raw;
+  return String(symbol ?? "").trim();
 }
 
 function getBadgeClass(text) {

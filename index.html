@@ -49,11 +49,7 @@
           </div>
 
           <form id="watchlistForm" class="watch-form hidden">
-            <div class="watch-symbol-row">
-              <label>股票代號<input id="watchSymbol" name="symbol" type="text" required placeholder="006208" autocomplete="off" /></label>
-              <button id="btnLookupStock" type="button">查詢</button>
-            </div>
-            <label>股票名稱<input id="watchName" name="name" type="text" readonly placeholder="查詢後自動帶入" /></label>
+            <label class="full">股票代號<input id="watchSymbol" name="symbol" type="text" required placeholder="2330" autocomplete="off" /></label>
             <label class="full">備註<input name="note" type="text" placeholder="ETF 長期觀察" /></label>
             <label>目標價<input name="target_price" type="number" step="0.0001" placeholder="250" /></label>
             <label>提醒價<input name="alert_price" type="number" step="0.0001" placeholder="230" /></label>
@@ -180,7 +176,6 @@
               </select>
             </label>
             <label>股票代號<input name="symbol" required placeholder="2330" /></label>
-            <label>股票名稱<input name="name" placeholder="台積電" /></label>
             <label>股數<input name="quantity" type="number" step="0.0001" required /></label>
             <label>價格<input name="price" type="number" step="0.0001" required /></label>
             <label>手續費<input name="fee" type="number" step="0.0001" value="0" /></label>
