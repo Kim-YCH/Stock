@@ -1,6 +1,6 @@
 const Api = (() => {
   function isConfigured() {
-    return Boolean(API_BASE_URL && API_BASE_URL.trim());
+    return typeof API_BASE_URL !== "undefined" && Boolean(API_BASE_URL && API_BASE_URL.trim());
   }
 
   function jsonp(action, params = {}) {
@@ -16,8 +16,9 @@ const Api = (() => {
       url.searchParams.set("action", action);
       url.searchParams.set("callback", callbackName);
 
-      if (API_TOKEN) {
-        url.searchParams.set("token", API_TOKEN);
+      const token = typeof API_TOKEN === "undefined" ? "" : API_TOKEN;
+      if (token) {
+        url.searchParams.set("token", token);
       }
 
       Object.entries(params).forEach(([key, value]) => {

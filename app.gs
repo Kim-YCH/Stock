@@ -1993,8 +1993,9 @@ function addTransaction_(params) {
   checkToken_(params.token || "");
 
   const lookedUp = lookupStock_(params.symbol || "");
-  if (!lookedUp.ok) return lookedUp;
-  const stock = lookedUp.stock;
+  const fallback = fallbackStock_(params.symbol || "", params.name || "");
+  if (!lookedUp.ok && !fallback) return lookedUp;
+  const stock = lookedUp.ok ? lookedUp.stock : fallback;
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = getOrCreateSheet_(ss, SHEETS.TRANSACTIONS);
@@ -2024,12 +2025,17 @@ function addTransaction_(params) {
   if (row[7] === "" || isNaN(row[7])) throw new Error("price 不可空白");
 
   appendDataRow_(sheet, HEADERS.Transactions, row);
-  calculatePortfolio_();
+  const now = formatDateTime_(new Date());
+  upsertStock_(stock, now);
+  const portfolioItems = calculatePortfolio_();
+  const portfolioItem = portfolioItems.find(item => String(item.symbol || "").trim() === stock.symbol) || null;
 
   return {
     ok: true,
     message: "新增成功",
-    id: id
+    id: id,
+    stock: stock,
+    portfolio: portfolioItem
   };
 }
 

@@ -247,6 +247,14 @@ function writeCache(key, data) {
   }
 }
 
+function clearCache(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch (err) {
+    // Ignore localStorage cleanup errors.
+  }
+}
+
 function getCachedDashboard() {
   return readCache(CACHE_KEYS.dashboard);
 }
@@ -667,6 +675,8 @@ async function onSubmitTransaction(event) {
 
   try {
     await Api.addTransaction(payload);
+    clearCache(CACHE_KEYS.dashboard);
+    clearCache(CACHE_KEYS.transactions);
     message.textContent = "新增成功";
     await loadTransactions();
   } catch (err) {
@@ -693,6 +703,8 @@ async function onDeleteTransaction(btn) {
     btn.disabled = true;
     setApiStatus("正在刪除交易紀錄...");
     await Api.deleteTransaction(id);
+    clearCache(CACHE_KEYS.dashboard);
+    clearCache(CACHE_KEYS.transactions);
     setApiStatus("已刪除交易紀錄");
     await loadTransactions();
   } catch (err) {
