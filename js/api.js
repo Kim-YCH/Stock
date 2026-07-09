@@ -72,7 +72,7 @@ const Api = (() => {
     getTransactions: () => jsonp("transactions"),
     lookupStock: (symbol) => jsonp("lookupStock", { symbol }),
     addWatchlist: (data) => jsonp("addWatchlist", data),
-    removeWatchlist: (symbol) => jsonp("removeWatchlist", { symbol }),
+    removeWatchlist: (symbol, name = "") => jsonp("removeWatchlist", { symbol, name }),
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
     calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),

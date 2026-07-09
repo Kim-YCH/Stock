@@ -64,7 +64,7 @@ const pages = {
   analysis: {
     title: "線圖分析",
     subtitle: "收盤價線、MA20、平均成本線",
-    loader: () => loadAnalysis(document.getElementById("analysisSymbol").value || "2330")
+    loader: () => loadAnalysis(normalizeSymbolInput(document.getElementById("analysisSymbol").value) || "2330")
   },
   transactions: {
     title: "交易紀錄",
@@ -87,7 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btnLoadAnalysis").addEventListener("click", () => {
-    loadAnalysis(document.getElementById("analysisSymbol").value || "2330");
+    loadAnalysis(normalizeSymbolInput(document.getElementById("analysisSymbol").value) || "2330");
   });
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
@@ -161,6 +161,7 @@ async function onBackfillHistoricalPrices() {
 
   const symbols = prompt("要指定股票代號嗎？\n空白 = 回補 Stocks / Watchlist / Portfolio 全部股票。\n範例：2330,2317,006208", "");
   if (symbols === null) return;
+  const normalizedSymbols = normalizeSymbolListInput(symbols);
 
   btn.disabled = true;
   const oldText = btn.textContent;
@@ -168,7 +169,7 @@ async function onBackfillHistoricalPrices() {
   setApiStatus(`正在回補最近 ${months} 個月歷史資料`);
 
   try {
-    const result = await Api.backfillHistoricalPrices(months, symbols || "");
+    const result = await Api.backfillHistoricalPrices(months, normalizedSymbols);
     setApiStatus(`回補完成：抓到 ${result.fetched || 0} 筆，新增 ${result.inserted || 0}，更新 ${result.updated || 0}`);
     await loadDashboard();
   } catch (err) {
@@ -323,9 +324,10 @@ async function onSubmitWatchlist(event) {
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
   payload.backfill = formData.has("backfill") ? "true" : "false";
+  payload.symbol = normalizeSymbolInput(payload.symbol);
 
   const message = document.getElementById("watchFormMessage");
-  const symbol = String(payload.symbol || "").trim();
+  const symbol = payload.symbol;
   if (!symbol) {
     message.textContent = "請輸入股票代號";
     return;
@@ -383,7 +385,7 @@ async function onDocumentClick(event) {
   try {
     btn.disabled = true;
     setApiStatus("正在移除關注股票...");
-    await Api.removeWatchlist(symbol);
+    await Api.removeWatchlist(symbol, name);
     setApiStatus("已移除關注股票");
     await loadDashboard();
   } catch (err) {
@@ -543,6 +545,7 @@ async function loadPortfolio() {
 }
 
 async function loadAnalysis(symbol) {
+  symbol = normalizeSymbolInput(symbol);
   let data;
   try {
     data = await Api.getAnalysis(symbol);
@@ -639,6 +642,7 @@ async function onSubmitTransaction(event) {
   delete payload.action;
   payload.market = "TW";
   payload.currency = "TWD";
+  payload.symbol = normalizeSymbolInput(payload.symbol);
 
   const message = document.getElementById("formMessage");
   const optimisticItem = {
@@ -805,6 +809,19 @@ function summaryCard(title, value, cls) {
 
 function displaySymbol(symbol, name) {
   return String(symbol ?? "").trim();
+}
+
+function normalizeSymbolInput(value) {
+  const s = String(value ?? "").trim();
+  return s.startsWith("'") ? s.slice(1).trim() : s;
+}
+
+function normalizeSymbolListInput(value) {
+  return String(value ?? "")
+    .split(/[\s,，、]+/)
+    .map(normalizeSymbolInput)
+    .filter(Boolean)
+    .join(",");
 }
 
 function getBadgeClass(text) {
