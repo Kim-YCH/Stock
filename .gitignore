@@ -1,6 +1,7 @@
 # Backend / secrets - do not upload to GitHub
 apps_script/
 backend/
+private_backend/
 secrets/
 .env
 *.secret

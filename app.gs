@@ -1,4 +1,6 @@
-// StockLab Apps Script Backend v7 PRIVATE - do not upload to GitHub
+// StockLab Apps Script Backend v10 PRIVATE - do not upload to GitHub
+const APP_VERSION = "v10.0";
+
 const CONFIG = {
   // 個人使用可先留空。
   // 若要防止別人亂新增交易 / 觸發更新，可設定例如 "my_secret_token"，
@@ -40,7 +42,8 @@ const SHEETS = {
   MARKET_INDEX: "MarketIndex",
   INDICATORS: "Indicators",
   SIGNALS: "Signals",
-  PORTFOLIO: "Portfolio"
+  PORTFOLIO: "Portfolio",
+  DASHBOARD_CACHE: "DashboardCache"
 };
 
 const HEADERS = {
@@ -52,7 +55,8 @@ const HEADERS = {
   MarketIndex: ["date", "symbol", "name", "close", "change", "changePercent", "volume"],
   Indicators: ["date", "symbol", "name", "close", "ma5", "ma20", "ma60", "rsi14", "macd", "macdSignal", "macdHist", "volumeMA20", "volumeRatio", "bias20", "trendScore", "momentumScore", "riskScore", "totalScore", "trendText", "signalSummary"],
   Signals: ["date", "symbol", "name", "signalType", "signalName", "direction", "close", "note"],
-  Portfolio: ["symbol", "name", "market", "currency", "quantity", "avgCost", "lastPrice", "marketValue", "totalCost", "unrealizedPnl", "unrealizedRate", "dividendTotal", "totalReturn", "lastDate", "trendText", "totalScore", "riskScore", "updatedAt"]
+  Portfolio: ["symbol", "name", "market", "currency", "quantity", "avgCost", "lastPrice", "marketValue", "totalCost", "unrealizedPnl", "unrealizedRate", "dividendTotal", "totalReturn", "lastDate", "trendText", "totalScore", "riskScore", "updatedAt"],
+  DashboardCache: ["key", "json", "updatedAt"]
 };
 
 
@@ -259,6 +263,7 @@ function setupDatabase() {
   seedSampleData_();
   repairSymbolCodes_();
   calculateAllAnalysis();
+  refreshDashboardCache_();
 }
 
 function buildStockMaster() {
@@ -478,6 +483,7 @@ function backfillHistoricalPrices_(params) {
 
   const upsertResult = upsertPrices_(allRows);
   calculateAllAnalysis();
+  const cacheResult = safeRefreshDashboardCache_();
 
   return {
     ok: true,
@@ -489,6 +495,7 @@ function backfillHistoricalPrices_(params) {
     updated: upsertResult.updated,
     details: details,
     demoCleanup: demoCleanup,
+    cache: cacheResult,
     updatedAt: formatDateTime_(new Date())
   };
 }
@@ -847,11 +854,12 @@ function updateDailyPrices_(params) {
   }
 
   calculateAllAnalysis();
+  const cacheResult = safeRefreshDashboardCache_();
 
   return {
     ok: true,
     message: "盤後資料更新完成",
-    version: "v7",
+    version: APP_VERSION,
     mode: "per-symbol-history",
     date: dateForSheet,
     targets: targets.length,
@@ -862,6 +870,7 @@ function updateDailyPrices_(params) {
     errors: errors.slice(0, 10),
     marketIndex: marketResult,
     demoCleanup: demoCleanup,
+    cache: cacheResult,
     updatedAt: formatDateTime_(new Date())
   };
 }
@@ -1519,6 +1528,15 @@ function doGet(e) {
       checkToken_(params.token || "");
       calculateAllAnalysis();
       result = { ok: true, message: "重新計算完成", updatedAt: formatDateTime_(new Date()) };
+    } else if (action === "buildDashboardCache") {
+      checkToken_(params.token || "");
+      result = buildDashboardCache_();
+    } else if (action === "createDailyCloseTrigger") {
+      checkToken_(params.token || "");
+      result = createDailyCloseTrigger();
+    } else if (action === "deleteDailyCloseTriggers") {
+      checkToken_(params.token || "");
+      result = deleteDailyCloseTriggers();
     } else {
       result = {
         ok: false,
@@ -1540,8 +1558,13 @@ function doGet(e) {
  * 首頁資料
  */
 function getDashboard_() {
-  calculatePortfolio_();
+  const cached = getDashboardCache_();
+  if (cached) return cached;
 
+  return buildDashboardResponseFromSheets_();
+}
+
+function buildDashboardResponseFromSheets_() {
   const watchlist = getEnabledWatchlist_();
   const latestIndicators = getLatestIndicatorsMap_();
   const priceTrendMap = getRecentCloseTrendMap_(30);
@@ -1559,6 +1582,7 @@ function getDashboard_() {
       riskScore: ind.riskScore || '',
       trendText: ind.trendText || '觀察',
       signalSummary: ind.signalSummary || '',
+      sparkline: priceTrendMap[w.symbol] || [],
       trend: priceTrendMap[w.symbol] || []
     };
   });
@@ -1574,7 +1598,7 @@ function getDashboard_() {
 
   // 如果 MarketIndex 沒有任何真實大盤資料，嘗試即時補抓一次 TAIEX。
   // 這可以避免清掉範例資料後首頁完全沒有大盤卡片。
-  if (!marketRows.some(r => r.symbol === 'TAIEX')) {
+  if (false && !marketRows.some(r => r.symbol === 'TAIEX')) {
     try {
       updateTwseMarketIndex_(new Date());
       marketRows = getLatestMarketRows_();
@@ -1606,7 +1630,9 @@ function getDashboard_() {
 
   return {
     ok: true,
+    version: APP_VERSION,
     updatedAt: formatDateTime_(new Date()),
+    dataDate: getLatestMarketOrPriceDate_(),
     market: marketRows,
     watchlist: watchlistRows
   };
@@ -1639,6 +1665,217 @@ function getLatestMarketRows_() {
   return result;
 }
 
+function getDashboardCache_() {
+  const cached = getCachedJson_("dashboard");
+  if (cached) return cached;
+
+  const sheetData = readDashboardCacheFromSheet_("dashboard");
+  if (sheetData) {
+    putCachedJson_("dashboard", sheetData, 300);
+    return sheetData;
+  }
+
+  return null;
+}
+
+function buildDashboardCache() {
+  return buildDashboardCache_();
+}
+
+function buildDashboardCache_() {
+  const dashboard = buildDashboardResponseFromSheets_();
+  writeDashboardCache_("dashboard", dashboard);
+  putCachedJson_("dashboard", dashboard, 300);
+
+  const portfolio = buildPortfolioCache_();
+  const versionInfo = {
+    ok: true,
+    version: APP_VERSION,
+    updatedAt: dashboard.updatedAt,
+    dataDate: dashboard.dataDate
+  };
+  writeDashboardCache_("version", versionInfo);
+  putCachedJson_("version", versionInfo, 300);
+
+  return {
+    ok: true,
+    version: APP_VERSION,
+    updatedAt: dashboard.updatedAt,
+    dataDate: dashboard.dataDate,
+    dashboard: dashboard,
+    portfolio: portfolio
+  };
+}
+
+function buildPortfolioCache_() {
+  const items = getSheetObjects_(SHEETS.PORTFOLIO);
+  const data = {
+    ok: true,
+    version: APP_VERSION,
+    updatedAt: formatDateTime_(new Date()),
+    items: items
+  };
+  writeDashboardCache_("portfolio", data);
+  putCachedJson_("portfolio", data, 300);
+  return data;
+}
+
+function refreshDashboardCache_() {
+  clearAppCache_();
+  return buildDashboardCache_();
+}
+
+function safeRefreshDashboardCache_() {
+  try {
+    return refreshDashboardCache_();
+  } catch (err) {
+    return {
+      ok: false,
+      message: err && err.message ? err.message : String(err)
+    };
+  }
+}
+
+function getCachedJson_(key) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const raw = cache.get(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function putCachedJson_(key, data, seconds) {
+  try {
+    CacheService.getScriptCache().put(key, JSON.stringify(data), seconds || 300);
+  } catch (err) {}
+}
+
+function clearAppCache_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.remove("dashboard");
+    cache.remove("portfolio");
+    cache.remove("version");
+  } catch (err) {}
+}
+
+function readDashboardCacheFromSheet_(key) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEETS.DASHBOARD_CACHE);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(h => String(h).trim());
+  const keyIdx = headers.indexOf("key");
+  const jsonIdx = headers.indexOf("json");
+  if (keyIdx < 0 || jsonIdx < 0) return null;
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][keyIdx] || "").trim() !== key) continue;
+    const raw = String(values[i][jsonIdx] || "").trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+function writeDashboardCache_(key, data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getOrCreateSheet_(ss, SHEETS.DASHBOARD_CACHE);
+  ensureHeader_(sheet, HEADERS.DashboardCache);
+
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(h => String(h).trim());
+  const keyIdx = headers.indexOf("key");
+  let rowIndex = -1;
+
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][keyIdx] || "").trim() === key) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+
+  const rowObject = {
+    key: key,
+    json: JSON.stringify(data),
+    updatedAt: formatDateTime_(new Date())
+  };
+  const row = headers.map(h => rowObject[h] === undefined ? "" : rowObject[h]);
+
+  if (rowIndex > 0) {
+    writeDataRow_(sheet, headers, rowIndex, row);
+  } else {
+    appendDataRow_(sheet, headers, row);
+  }
+}
+
+function getLatestMarketOrPriceDate_() {
+  const dates = [];
+  [SHEETS.MARKET_INDEX, SHEETS.PRICES, SHEETS.INDICATORS].forEach(sheetName => {
+    getSheetObjects_(sheetName).forEach(row => {
+      const date = normalizeMarketDate_(row.date, "");
+      if (date) dates.push(date);
+    });
+  });
+
+  return dates.sort().pop() || "";
+}
+
+function createDailyCloseTrigger() {
+  deleteDailyCloseTriggers();
+
+  ScriptApp.newTrigger("runDailyCloseUpdate")
+    .timeBased()
+    .everyDays(1)
+    .atHour(20)
+    .create();
+
+  return {
+    ok: true,
+    version: APP_VERSION,
+    message: "Daily close trigger created",
+    hour: 20
+  };
+}
+
+function deleteDailyCloseTriggers() {
+  const triggers = ScriptApp.getProjectTriggers();
+  let deleted = 0;
+
+  triggers.forEach(trigger => {
+    if (trigger.getHandlerFunction() === "runDailyCloseUpdate") {
+      ScriptApp.deleteTrigger(trigger);
+      deleted++;
+    }
+  });
+
+  return {
+    ok: true,
+    version: APP_VERSION,
+    deleted: deleted
+  };
+}
+
+function runDailyCloseUpdate() {
+  const result = updateDailyPrices_({ token: CONFIG.API_TOKEN || "" });
+  const cacheResult = refreshDashboardCache_();
+  result.cache = {
+    ok: true,
+    updatedAt: cacheResult.updatedAt,
+    dataDate: cacheResult.dataDate,
+    version: APP_VERSION
+  };
+  return result;
+}
+
 function normalizeMarketCard_(m) {
   return {
     symbol: String(m.symbol || '').trim(),
@@ -1665,12 +1902,19 @@ function isDemoMarketRow_(r) {
  * 庫存頁資料
  */
 function getPortfolio_() {
+  const cached = getCachedJson_("portfolio");
+  if (cached) return cached;
+
   const items = calculatePortfolio_();
-  return {
+  const data = {
     ok: true,
+    version: APP_VERSION,
     updatedAt: formatDateTime_(new Date()),
     items: items
   };
+  writeDashboardCache_("portfolio", data);
+  putCachedJson_("portfolio", data, 300);
+  return data;
 }
 
 /**
@@ -1877,12 +2121,14 @@ function addWatchlist_(params) {
   } catch (err) {
     analysisWarning = err && err.message ? err.message : String(err);
   }
+  const cacheResult = safeRefreshDashboardCache_();
 
   return {
     ok: true,
     message: backfillWarning ? "已加入關注股票，歷史回補稍後可手動執行" : "已加入關注股票",
     stock: stock,
     backfill: backfillResult,
+    cache: cacheResult,
     warning: [lookupWarning, backfillWarning, analysisWarning].filter(Boolean).join(" / ")
   };
 }
@@ -1953,12 +2199,14 @@ function removeWatchlistRows_(params) {
   }
 
   calculateAllAnalysis();
+  const cacheResult = safeRefreshDashboardCache_();
 
   return {
     ok: true,
     message: "已從資料庫刪除關注股票",
     deleted: watchlistDeleted,
-    stocksDeleted: stocksDeleted
+    stocksDeleted: stocksDeleted,
+    cache: cacheResult
   };
 }
 
@@ -2029,13 +2277,15 @@ function addTransaction_(params) {
   upsertStock_(stock, now);
   const portfolioItems = calculatePortfolio_();
   const portfolioItem = portfolioItems.find(item => String(item.symbol || "").trim() === stock.symbol) || null;
+  const cacheResult = safeRefreshDashboardCache_();
 
   return {
     ok: true,
     message: "新增成功",
     id: id,
     stock: stock,
-    portfolio: portfolioItem
+    portfolio: portfolioItem,
+    cache: cacheResult
   };
 }
 
@@ -2061,10 +2311,12 @@ function deleteTransaction_(params) {
     if (String(values[i][idIdx] || "").trim() !== id) continue;
     sheet.deleteRow(i + 1);
     calculateAllAnalysis();
+    const cacheResult = safeRefreshDashboardCache_();
     return {
       ok: true,
       message: "已刪除交易紀錄",
-      id: id
+      id: id,
+      cache: cacheResult
     };
   }
 
@@ -2752,7 +3004,7 @@ function debugStatus_() {
 
   return {
     ok: true,
-    version: 'v6',
+    version: APP_VERSION,
     time: formatDateTime_(new Date()),
     apiBase: 'Apps Script Web App 已回應',
     marketRows: marketRows,

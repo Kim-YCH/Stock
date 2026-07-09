@@ -389,3 +389,15 @@
 - 移除 6208 自動轉 006208 的錯誤邏輯
 - 各頁面新增股票不再顯示股票名稱輸入欄
 - 交易紀錄固定台股 TWD，不再顯示 market / currency
+
+### v10
+
+Changes:
+
+- Added `APP_VERSION = "v10.0"` to frontend and Apps Script responses.
+- Added `DashboardCache` sheet support with `dashboard`, `portfolio`, and `version` cache keys.
+- Changed `dashboard` API to read cache first instead of recalculating sheets or calling market APIs on every load.
+- Added `buildDashboardCache()`, `runDailyCloseUpdate()`, `createDailyCloseTrigger()`, and `deleteDailyCloseTriggers()`.
+- Refreshed DashboardCache after daily update, backfill, watchlist changes, and transaction changes.
+- Added dashboard update status with `updatedAt`, `dataDate`, and version display.
+- Kept transaction records as the source for portfolio calculation and tracked symbols.

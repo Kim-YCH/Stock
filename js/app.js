@@ -74,11 +74,12 @@ const pages = {
 };
 
 const CACHE_KEYS = {
-  dashboard: "stocklab_dashboard_cache_v1",
+  dashboard: "stocklab_dashboard_cache_v10",
   transactions: "stocklab_transactions_cache_v1"
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  setAppVersionLabel();
   detectDeviceMode();
   window.addEventListener("resize", detectDeviceMode);
 
@@ -253,6 +254,15 @@ function clearCache(key) {
   } catch (err) {
     // Ignore localStorage cleanup errors.
   }
+}
+
+function getAppVersion() {
+  return typeof APP_VERSION === "undefined" ? "v10.0" : APP_VERSION;
+}
+
+function setAppVersionLabel() {
+  const el = document.getElementById("appVersion");
+  if (el) el.textContent = getAppVersion();
 }
 
 function getCachedDashboard() {
@@ -440,8 +450,32 @@ async function loadDashboard() {
 }
 
 function renderDashboard(data) {
+  renderUpdateStatus(data.updatedAt, data.dataDate, data.version);
   renderMarketCards(data.market || []);
   renderWatchlist(data.watchlist || []);
+}
+
+function renderUpdateStatus(updatedAt, dataDate, version) {
+  const el = document.getElementById("dashboardUpdateStatus");
+  if (!el) return;
+
+  const displayVersion = version || getAppVersion();
+  const today = formatLocalDate(new Date());
+
+  if (!dataDate) {
+    el.className = "update-status warning";
+    el.textContent = `尚未建立更新資料${displayVersion ? " · " + displayVersion : ""}`;
+    return;
+  }
+
+  if (dataDate === today) {
+    el.className = "update-status success";
+    el.textContent = `今日已更新 ${updatedAt || dataDate}${displayVersion ? " · " + displayVersion : ""}`;
+    return;
+  }
+
+  el.className = "update-status warning";
+  el.textContent = `資料日期 ${dataDate}，尚未更新到今日${displayVersion ? " · " + displayVersion : ""}`;
 }
 
 function renderMarketCards(items) {
@@ -834,6 +868,14 @@ function normalizeSymbolListInput(value) {
     .map(normalizeSymbolInput)
     .filter(Boolean)
     .join(",");
+}
+
+function formatLocalDate(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getBadgeClass(text) {
