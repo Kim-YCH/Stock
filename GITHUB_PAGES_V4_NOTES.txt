@@ -1,0 +1,38 @@
+StockLab v4 GitHub Pages 部署說明
+=================================
+
+這版已經把 index.html 移到最外層。
+
+你可以直接把整個 stock_manager_mvp 資料夾內容推到 GitHub repo 根目錄：
+
+index.html
+css/
+js/
+icons/
+manifest.webmanifest
+apps_script/
+database_schema/
+
+GitHub Pages 設定：
+1. Repository -> Settings -> Pages
+2. Source 選 Deploy from a branch
+3. Branch 選 main
+4. Folder 選 /root
+5. 儲存
+
+前端設定：
+1. 打開 js/config.js
+2. 將 API_BASE_URL 改成 Apps Script Web App URL
+3. 若 Code.gs 有設定 CONFIG.API_TOKEN，js/config.js 的 API_TOKEN 也要一致
+
+手機 / 電腦版：
+- 系統會用 CSS media query 和 JS 偵測裝置寬度 / 觸控能力。
+- 電腦版使用左側選單。
+- 手機版自動改成底部固定選單。
+
+首頁加權指數仍是模擬時：
+1. 先確認 Apps Script 已部署 v4 Code.gs。
+2. 前端按「清除範例資料」。
+3. 再按「更新盤後資料」。
+4. MarketIndex 應該會寫入 TAIEX 最新可取得交易日。
+
