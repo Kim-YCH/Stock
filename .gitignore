@@ -1,4 +1,3 @@
-
 # Backend / secrets - do not upload to GitHub
 apps_script/
 backend/
@@ -8,3 +7,6 @@ secrets/
 *.key
 credentials.json
 token.json
+
+# Old frontend folder - root files are used for GitHub Pages
+frontend/

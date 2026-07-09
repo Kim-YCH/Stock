@@ -1,18 +1,10 @@
 const Mock = {
   dashboard: {
-    ok: true,
-    updatedAt: "Mock Data",
-    market: [
-      { symbol: "TAIEX", name: "加權指數", close: 23520, change: 180, changePercent: 0.77, date: "模擬資料", trend: [23100, 23150, 23280, 23240, 23400, 23520] },
-      { symbol: "OTC", name: "櫃買指數", close: 260.5, change: 2.1, changePercent: 0.82, date: "模擬資料", trend: [252, 254, 253, 257, 258, 260.5] },
-      { symbol: "BULL", name: "關注股偏多", close: 12, change: 0, changePercent: 60, date: "模擬資料", trend: [7, 8, 8, 10, 11, 12] },
-      { symbol: "RISK", name: "風險提醒", close: 3, change: 0, changePercent: 0, date: "模擬資料", trend: [1, 2, 2, 3, 2, 3] }
-    ],
-    watchlist: [
-      { symbol: "2330", name: "台積電", close: 965, rsi14: 63, volumeRatio: 1.35, totalScore: 78, trendText: "偏多", signalSummary: "收盤站上 MA20", trend: [900, 910, 920, 935, 955, 965] },
-      { symbol: "2317", name: "鴻海", close: 190, rsi14: 45, volumeRatio: 0.82, totalScore: 48, trendText: "盤整觀察", signalSummary: "跌破 MA20", trend: [202, 198, 195, 192, 188, 190] },
-      { symbol: "006208", name: "富邦台50", close: 125, rsi14: 61, volumeRatio: 1.1, totalScore: 75, trendText: "偏多", signalSummary: "均線多頭", trend: [112, 115, 118, 121, 123, 125] }
-    ]
+    ok: false,
+    updatedAt: "API 未連線",
+    market: [],
+    watchlist: [],
+    message: "尚未取得真實資料。請確認 js/config.js 的 API_BASE_URL 已填入最新 Apps Script Web App URL，並且 GitHub Pages 已重新部署。"
   },
   portfolio: {
     ok: true,
@@ -96,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
   document.getElementById("btnBackfillHistory").addEventListener("click", onBackfillHistoricalPrices);
   document.getElementById("btnClearDemo").addEventListener("click", onClearDemoData);
+  document.getElementById("btnRepairSymbols").addEventListener("click", onRepairSymbolCodes);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
 
@@ -133,7 +126,10 @@ async function onUpdateDailyPrices() {
 
   try {
     const result = await Api.updateDailyPrices();
-    setApiStatus(`更新完成：新增 ${result.inserted || 0}，更新 ${result.updated || 0}`);
+    const marketText = result.marketIndex && result.marketIndex.ok
+      ? `，加權 ${result.marketIndex.close}`
+      : `，大盤未更新：${(result.marketIndex && result.marketIndex.message) || "未知原因"}`;
+    setApiStatus(`更新完成：新增 ${result.inserted || 0}，更新 ${result.updated || 0}${marketText}`);
     await loadDashboard();
   } catch (err) {
     setApiStatus("更新失敗：" + err.message);
@@ -208,6 +204,34 @@ async function onClearDemoData() {
   }
 }
 
+
+
+async function onRepairSymbolCodes() {
+  const btn = document.getElementById("btnRepairSymbols");
+  if (!Api.isConfigured()) {
+    setApiStatus("尚未設定 API_BASE_URL，無法修正 Google Sheets 股票代號");
+    return;
+  }
+
+  const ok = confirm("確定要修正股票代號嗎？\n用途：把 Google Sheets 中被吃掉前導 0 的 ETF 代號修回來，例如 6208 + 富邦台50 → 006208。");
+  if (!ok) return;
+
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = "修正中...";
+
+  try {
+    const result = await Api.repairSymbolCodes();
+    setApiStatus(`代號修正完成：修正 ${result.changed || 0} 格，請再按「回補歷史資料」或「更新盤後資料」`);
+    await loadDashboard();
+  } catch (err) {
+    setApiStatus("代號修正失敗：" + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+}
+
 function setApiStatus(message) {
   const el = document.getElementById("apiStatus");
   if (message) {
@@ -215,7 +239,7 @@ function setApiStatus(message) {
     return;
   }
 
-  el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，使用假資料";
+  el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，未顯示模擬行情";
 }
 
 function changePage(pageName) {
@@ -241,7 +265,7 @@ async function loadDashboard() {
     setApiStatus("API 已連線");
   } catch (err) {
     data = Mock.dashboard;
-    setApiStatus(err.message);
+    setApiStatus("API 未連線 / 呼叫失敗：" + err.message);
   }
 
   renderMarketCards(data.market || []);
@@ -250,6 +274,17 @@ async function loadDashboard() {
 
 function renderMarketCards(items) {
   const container = document.getElementById("marketCards");
+  if (!items || items.length === 0) {
+    container.innerHTML = `
+      <div class="card wide-warning">
+        <div class="card-title">尚未取得真實大盤資料</div>
+        <div class="card-value">請檢查 API</div>
+        <div class="warn">不再顯示 23,520 這類模擬行情，避免誤判。</div>
+      </div>
+    `;
+    return;
+  }
+
   container.innerHTML = items.map(item => {
     const cls = Number(item.change) >= 0 ? "up" : "down";
     const changeText = item.symbol === "BULL" || item.symbol === "RISK"
@@ -257,11 +292,11 @@ function renderMarketCards(items) {
       : `${number(item.change)} ${number(item.changePercent)}%`;
 
     const dateText = item.date ? `<div class="card-date">${escapeHtml(item.date)}</div>` : "";
-    const isMock = String(item.date || "").includes("模擬");
-    const mockText = isMock ? `<div class="mock-hint">fallback 模擬</div>` : "";
+    const isMock = String(item.date || "").includes("模擬") || Number(item.close) === 23520;
+    const mockText = isMock ? `<div class="mock-hint">疑似模擬 / 舊資料</div>` : "";
 
     return `
-      <div class="card">
+      <div class="card ${isMock ? "demo-warning" : ""}">
         <div class="card-title">${escapeHtml(item.name || item.symbol)}</div>
         <div class="card-value">${number(item.close)}</div>
         <div class="${cls}">${changeText}</div>
@@ -279,14 +314,14 @@ function renderWatchlist(items) {
     const badgeClass = getBadgeClass(item.trendText);
     return `
       <tr>
-        <td>${escapeHtml(item.symbol)} ${escapeHtml(item.name || "")}</td>
-        <td>${number(item.close)}</td>
-        <td>${number(item.rsi14)}</td>
-        <td>${number(item.volumeRatio)}</td>
-        <td>${number(item.totalScore)}</td>
-        <td><span class="badge ${badgeClass}">${escapeHtml(item.trendText || "觀察")}</span></td>
-        <td>${escapeHtml(item.signalSummary || "")}</td>
-        <td>${sparkline(item.trend || [], "#38bdf8", 160, 36)}</td>
+        <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+        <td data-label="收盤">${number(item.close)}</td>
+        <td data-label="RSI">${number(item.rsi14)}</td>
+        <td data-label="量比">${number(item.volumeRatio)}</td>
+        <td data-label="分數">${number(item.totalScore)}</td>
+        <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(item.trendText || "觀察")}</span></td>
+        <td data-label="訊號">${escapeHtml(item.signalSummary || "")}</td>
+        <td data-label="迷你線圖" class="td-sparkline">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</td>
       </tr>
     `;
   }).join("");
@@ -319,14 +354,14 @@ async function loadPortfolio() {
     const pnlCls = Number(item.unrealizedPnl) >= 0 ? "up" : "down";
     return `
       <tr>
-        <td>${escapeHtml(item.symbol)} ${escapeHtml(item.name || "")}</td>
-        <td>${number(item.quantity)}</td>
-        <td>${number(item.avgCost)}</td>
-        <td>${number(item.lastPrice)}</td>
-        <td>${money(item.marketValue)}</td>
-        <td class="${pnlCls}">${money(item.unrealizedPnl)}</td>
-        <td class="${pnlCls}">${number(item.unrealizedRate)}%</td>
-        <td><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
+        <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+        <td data-label="股數">${number(item.quantity)}</td>
+        <td data-label="平均成本">${number(item.avgCost)}</td>
+        <td data-label="收盤價">${number(item.lastPrice)}</td>
+        <td data-label="市值">${money(item.marketValue)}</td>
+        <td data-label="未實現損益" class="${pnlCls}">${money(item.unrealizedPnl)}</td>
+        <td data-label="報酬率" class="${pnlCls}">${number(item.unrealizedRate)}%</td>
+        <td data-label="技術狀態"><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
       </tr>
     `;
   }).join("");
@@ -391,15 +426,15 @@ async function loadTransactions() {
   const items = data.items || [];
   document.getElementById("transactionsBody").innerHTML = items.map(item => `
     <tr>
-      <td>${escapeHtml(item.date || "")}</td>
-      <td>${escapeHtml(item.action || "")}</td>
-      <td>${escapeHtml(item.symbol || "")} ${escapeHtml(item.name || "")}</td>
-      <td>${number(item.quantity)}</td>
-      <td>${number(item.price)}</td>
-      <td>${number(item.fee)}</td>
-      <td>${number(item.tax)}</td>
-      <td>${escapeHtml(item.currency || "")}</td>
-      <td>${escapeHtml(item.note || "")}</td>
+      <td data-label="日期">${escapeHtml(item.date || "")}</td>
+      <td data-label="類型">${escapeHtml(item.action || "")}</td>
+      <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+      <td data-label="股數">${number(item.quantity)}</td>
+      <td data-label="價格">${number(item.price)}</td>
+      <td data-label="手續費">${number(item.fee)}</td>
+      <td data-label="稅">${number(item.tax)}</td>
+      <td data-label="幣別">${escapeHtml(item.currency || "")}</td>
+      <td data-label="備註">${escapeHtml(item.note || "")}</td>
     </tr>
   `).join("");
 }
@@ -526,6 +561,19 @@ function summaryCard(title, value, cls) {
       <div class="card-value ${cls || ""}">${value}</div>
     </div>
   `;
+}
+
+
+function displaySymbol(symbol, name) {
+  const raw = String(symbol ?? "").trim();
+  const stockName = String(name ?? "").trim();
+
+  // 防止 Google Sheets 把 ETF 前導 0 吃掉後，前端顯示成 6208。
+  // 這裡只處理已知名稱，避免把真正的個股 6208 誤改。
+  if (raw === "6208" && stockName.includes("富邦台50")) return "006208";
+  if (raw === "50" && stockName.includes("元大台灣50")) return "0050";
+
+  return raw;
 }
 
 function getBadgeClass(text) {

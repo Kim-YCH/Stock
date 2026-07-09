@@ -356,3 +356,12 @@
 - 自動下單
 - 高頻資料
 - AI 量化
+
+## v6 修正紀錄
+
+- 修正首頁在 API 未連線時仍顯示 23,520 模擬加權指數的問題。
+- 前端不再用假大盤行情當 fallback，避免誤判。
+- clearDemoData() 加強：清除 TAIEX=23520、OTC=260.5 舊範例，不再限定日期。
+- TAIEX 抓取改成優先 TWSE MI_INDEX type=IND，再 fallback type=ALL。
+- 新增 debugStatus action，用來確認 GitHub Pages 是否真的連到最新版 Apps Script。
+- 手機版字體、卡片、按鈕與底部選單加大，改善閱讀性。

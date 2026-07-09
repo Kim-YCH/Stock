@@ -498,3 +498,237 @@ body.device-mobile .chart-wrap {
 body.device-mobile .table-wrap table {
   min-width: 780px;
 }
+
+
+/* v5 mobile readability: 手機改成較大字級與卡片式列表 */
+@media (max-width: 650px) {
+  html {
+    font-size: 18px;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-size: 17px;
+    line-height: 1.55;
+    padding-bottom: 96px;
+  }
+
+  .main {
+    padding: 22px 18px 118px;
+  }
+
+  h1 {
+    font-size: 32px;
+    line-height: 1.25;
+  }
+
+  h2 {
+    font-size: 24px;
+  }
+
+  .muted {
+    font-size: 15px;
+  }
+
+  .top-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .top-actions button,
+  .inline-form button,
+  button {
+    min-height: 48px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .device-badge,
+  #apiStatus {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  .card,
+  .panel {
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .card-title {
+    font-size: 17px;
+  }
+
+  .card-value {
+    font-size: 34px;
+  }
+
+  .table-wrap {
+    overflow: visible;
+  }
+
+  table {
+    min-width: 0 !important;
+  }
+
+  table thead {
+    display: none;
+  }
+
+  table,
+  tbody,
+  tr,
+  td {
+    display: block;
+    width: 100%;
+  }
+
+  tbody tr {
+    background: rgba(2, 6, 23, 0.72);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+
+  td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    min-height: 40px;
+    padding: 9px 0;
+    border-bottom: 1px solid rgba(31, 41, 55, 0.75);
+    white-space: normal;
+    font-size: 17px;
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    flex: 0 0 auto;
+    font-size: 15px;
+  }
+
+  .td-sparkline {
+    display: none;
+  }
+
+  .badge {
+    font-size: 14px;
+    padding: 7px 11px;
+  }
+
+  .sidebar {
+    padding: 10px 10px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .nav-btn {
+    font-size: 13px;
+    min-height: 44px;
+    padding: 9px 5px;
+  }
+
+  .inline-form {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr auto;
+  }
+
+  input,
+  select {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .chart-wrap {
+    height: 330px !important;
+  }
+}
+
+/* v6 mobile readability + stale data warning */
+.wide-warning {
+  grid-column: 1 / -1;
+}
+
+.demo-warning {
+  border-color: rgba(234, 179, 8, 0.55) !important;
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.18), 0 18px 40px rgba(0,0,0,.25);
+}
+
+.mock-hint {
+  margin-top: 8px;
+  color: var(--yellow);
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  body {
+    font-size: 18px;
+  }
+
+  .main {
+    padding: 22px 16px 112px;
+  }
+
+  .topbar h1,
+  h1 {
+    font-size: 32px;
+    line-height: 1.15;
+  }
+
+  h2 {
+    font-size: 24px;
+  }
+
+  .muted {
+    font-size: 16px;
+    line-height: 1.45;
+  }
+
+  .top-actions {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .top-actions button {
+    min-height: 56px;
+    font-size: 18px;
+    border-radius: 16px;
+  }
+
+  .card,
+  .panel {
+    padding: 22px 20px;
+  }
+
+  .card-title {
+    font-size: 19px;
+  }
+
+  .card-value {
+    font-size: 38px;
+  }
+
+  td {
+    font-size: 18px;
+    min-height: 46px;
+  }
+
+  td::before {
+    font-size: 16px;
+  }
+
+  .nav-btn {
+    font-size: 15px;
+    min-height: 52px;
+  }
+}

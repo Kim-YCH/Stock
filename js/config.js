@@ -1,6 +1,6 @@
 // 請改成你的 Apps Script Web App URL。
 // 空白時會使用前端假資料，方便先看 UI。
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycby7wui0jdS9ppvy21yNU1WkJbPFI9zYVD2oLU3HkQKtzNn0akutEjTjehdhMHACM6kq/exec";
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbzhwqPl5hoaFSks5XUvhdU_6JbaQXH3943cCeS3EN6KF5DBqPjfvfh8t0j_BdLpoRZG/exec";
 
 // 若你在 Apps Script 的 CONFIG.API_TOKEN 有設定，這裡也要填一樣。
 // 個人使用可以先留空。
