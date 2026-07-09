@@ -355,7 +355,7 @@ async function onSubmitWatchlist(event) {
       ? `${result.message || "已加入關注股票"}：${result.warning}`
       : (result.message || "已加入關注股票");
     form.reset();
-    form.querySelector("input[name='backfill']").checked = true;
+    form.querySelector("input[name='backfill']").checked = false;
     await loadDashboard();
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
