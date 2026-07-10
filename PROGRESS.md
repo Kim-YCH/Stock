@@ -401,3 +401,14 @@ Changes:
 - Refreshed DashboardCache after daily update, backfill, watchlist changes, and transaction changes.
 - Added dashboard update status with `updatedAt`, `dataDate`, and version display.
 - Kept transaction records as the source for portfolio calculation and tracked symbols.
+
+### v10.1
+
+Changes:
+
+- Changed `updateDailyPrices_()` and `runDailyCloseUpdate()` to use quick daily close mode.
+- Daily update now scans recent trading days, fetches TWSE/TPEX daily close lists once, and filters only tracked symbols.
+- Added `DashboardCache.lastRun` success/failure logging for scheduled updates.
+- Stopped `setupDatabase()` from writing sample data.
+- Removed frontend fake portfolio, analysis, and transaction fallback rows.
+- Added chart hover tooltip for single-point close price, MA20, and average cost.

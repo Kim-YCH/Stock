@@ -266,6 +266,45 @@ svg {
   height: 100%;
 }
 
+.chart-hover-layer line {
+  stroke: rgba(226, 232, 240, 0.72);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 6;
+}
+
+.chart-hover-layer circle {
+  fill: #f8fafc;
+  stroke: var(--green);
+  stroke-width: 4;
+}
+
+.chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  min-width: 138px;
+  max-width: min(220px, calc(100% - 16px));
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.94);
+  color: #e5e7eb;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.32);
+  font-size: 13px;
+  line-height: 1.45;
+  pointer-events: none;
+}
+
+.chart-tooltip strong,
+.chart-tooltip span {
+  display: block;
+}
+
+.chart-tooltip strong {
+  margin-bottom: 4px;
+  color: #f8fafc;
+  font-size: 12px;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;

@@ -1,5 +1,5 @@
-// StockLab Apps Script Backend v10 PRIVATE - do not upload to GitHub
-const APP_VERSION = "v10.0";
+// StockLab Apps Script Backend v10.1 PRIVATE - do not upload to GitHub
+const APP_VERSION = "v10.1";
 
 const CONFIG = {
   // 個人使用可先留空。
@@ -249,7 +249,7 @@ function repairSymbolCodes_() {
 
 /**
  * 第一次請手動執行這個函式。
- * 會建立所有需要的 Sheet 與範例資料。
+ * 會建立所有需要的 Sheet。v10.1 起不再自動寫入範例資料。
  */
 function setupDatabase() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -260,7 +260,6 @@ function setupDatabase() {
   });
 
   applySymbolTextFormats_();
-  seedSampleData_();
   repairSymbolCodes_();
   calculateAllAnalysis();
   refreshDashboardCache_();
@@ -374,6 +373,8 @@ function clearDemoData_() {
 
     // 舊版 setupDatabase 的固定日期範例。
     if (date === '2026-07-09' && (symbol === 'TAIEX' || symbol === 'OTC')) return true;
+    if (date === '2020-01-01' && symbol === 'TAIEX' && close === 12000) return true;
+    if (date === '2020-01-01' && symbol === 'OTC' && close === 150) return true;
 
     return false;
   });
@@ -389,7 +390,9 @@ function clearDemoData_() {
     const symbol = String(row.symbol || '').trim();
     const date = normalizeMarketDate_(row.date, '');
     if (!demoSymbols.has(symbol)) return false;
-    return date >= '2026-03-20' && date <= '2026-06-20';
+    if (date >= '2026-03-20' && date <= '2026-06-20') return true;
+    if (date >= '2020-01-01' && date <= '2020-03-31') return true;
+    return false;
   });
 
   SpreadsheetApp.flush();
@@ -782,6 +785,124 @@ function toRocMonth_(date) {
 }
 
 function updateDailyPrices_(params) {
+  return updateDailyClosePricesOnly_(params || {});
+}
+
+function updateDailyClosePricesOnly_(params) {
+  params = params || {};
+  checkToken_(params.token || "");
+  const demoCleanup = clearDemoData_();
+
+  const targetDate = params.date ? new Date(params.date) : new Date();
+  const targets = getBackfillTargets_(params.symbols || params.symbol || "");
+  const targetSymbols = new Set(targets.map(t => t.symbol).filter(Boolean));
+
+  if (targetSymbols.size === 0) {
+    throw new Error("沒有可更新的股票，請先新增關注股票、庫存或交易紀錄");
+  }
+
+  const candidates = getRecentDateCandidates_(targetDate, 10);
+  let selectedDate = "";
+  let allPriceRows = [];
+  let marketResult = null;
+  const errors = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const d = candidates[i];
+    let rows = [];
+
+    try {
+      const twseRows = fetchTwseDailyPrices_(d, targetSymbols);
+      rows = rows.concat(twseRows);
+    } catch (err) {
+      errors.push(formatDate_(d) + " TWSE: " + err.message);
+    }
+
+    try {
+      const tpexRows = fetchTpexDailyPrices_(d, targetSymbols);
+      rows = rows.concat(tpexRows);
+    } catch (err) {
+      errors.push(formatDate_(d) + " TPEX: " + err.message);
+    }
+
+    rows = rows.filter(r => r && r.symbol && isFinite(Number(r.close)) && Number(r.close) > 0);
+
+    if (rows.length > 0) {
+      allPriceRows = rows;
+      selectedDate = getLatestDateFromPriceRows_(rows) || formatDate_(d);
+      break;
+    }
+  }
+
+  if (allPriceRows.length === 0) {
+    const message = "最近 10 天沒有抓到關注股票的盤後資料" +
+      (errors.length ? "；錯誤：" + errors.slice(0, 3).join("；") : "");
+
+    const lastRun = {
+      ok: false,
+      version: APP_VERSION,
+      mode: "daily-close-only",
+      message: message,
+      startedAt: params.startedAt || "",
+      finishedAt: formatDateTime_(new Date()),
+      errors: errors
+    };
+
+    writeDashboardCache_("lastRun", lastRun);
+    throw new Error(message);
+  }
+
+  const upsertResult = upsertPrices_(allPriceRows);
+
+  try {
+    marketResult = updateTwseMarketIndex_(new Date(selectedDate));
+  } catch (err) {
+    marketResult = {
+      ok: false,
+      message: err.message
+    };
+  }
+
+  calculateAllAnalysis();
+  const cacheResult = refreshDashboardCache_();
+
+  const result = {
+    ok: true,
+    version: APP_VERSION,
+    mode: "daily-close-only",
+    message: "盤後收盤資料更新完成",
+    requestedDate: formatDate_(targetDate),
+    dataDate: selectedDate,
+    targetCount: targetSymbols.size,
+    fetched: allPriceRows.length,
+    inserted: upsertResult.inserted,
+    updated: upsertResult.updated,
+    marketIndex: marketResult,
+    demoCleanup: demoCleanup,
+    cache: {
+      ok: true,
+      updatedAt: cacheResult.updatedAt,
+      dataDate: cacheResult.dataDate
+    },
+    errors: errors.slice(0, 5),
+    updatedAt: formatDateTime_(new Date())
+  };
+
+  writeDashboardCache_("lastRun", result);
+  return result;
+}
+
+function getLatestDateFromPriceRows_(rows) {
+  const dates = rows
+    .map(r => normalizeMarketDate_(r.date, ""))
+    .filter(Boolean)
+    .sort();
+
+  return dates.length ? dates[dates.length - 1] : "";
+}
+
+function updateLatestBySymbolHistory_(params) {
+  params = params || {};
   checkToken_(params.token || "");
   const demoCleanup = clearDemoData_();
 
@@ -1514,6 +1635,8 @@ function doGet(e) {
     } else if (action === "clearDemoData") {
       checkToken_(params.token || "");
       result = clearDemoData_();
+      calculateAllAnalysis();
+      result.cache = safeRefreshDashboardCache_();
       result.ok = true;
       result.message = "範例資料已清除";
     } else if (action === "debugStatus") {
@@ -1865,15 +1988,42 @@ function deleteDailyCloseTriggers() {
 }
 
 function runDailyCloseUpdate() {
-  const result = updateDailyPrices_({ token: CONFIG.API_TOKEN || "" });
-  const cacheResult = refreshDashboardCache_();
-  result.cache = {
-    ok: true,
-    updatedAt: cacheResult.updatedAt,
-    dataDate: cacheResult.dataDate,
-    version: APP_VERSION
-  };
-  return result;
+  const startedAt = formatDateTime_(new Date());
+
+  try {
+    const result = updateDailyClosePricesOnly_({
+      token: CONFIG.API_TOKEN || "",
+      date: new Date(),
+      startedAt: startedAt
+    });
+
+    const lastRun = {
+      ok: true,
+      version: APP_VERSION,
+      mode: "daily-close-only",
+      message: "每日盤後更新完成",
+      startedAt: startedAt,
+      finishedAt: formatDateTime_(new Date()),
+      dataDate: result.dataDate,
+      result: result
+    };
+
+    writeDashboardCache_("lastRun", lastRun);
+    return lastRun;
+  } catch (err) {
+    const lastRun = {
+      ok: false,
+      version: APP_VERSION,
+      mode: "daily-close-only",
+      message: err.message,
+      stack: err.stack,
+      startedAt: startedAt,
+      finishedAt: formatDateTime_(new Date())
+    };
+
+    writeDashboardCache_("lastRun", lastRun);
+    return lastRun;
+  }
 }
 
 function normalizeMarketCard_(m) {
@@ -2698,103 +2848,15 @@ function detectSignals_(ctx) {
 }
 
 /**
- * 範例資料，方便你第一次看畫面。
- * 之後可以刪除並換成真實 API 抓回來的 Prices。
+ * v10.1 起保留此函式只為了相容舊呼叫，不再寫入範例資料。
  */
 function seedSampleData_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  const stocksSheet = ss.getSheetByName(SHEETS.STOCKS);
-  if (stocksSheet.getLastRow() <= 1) {
-    formatSymbolColumn_(stocksSheet, HEADERS.Stocks);
-    stocksSheet.getRange(2, 1, 3, HEADERS.Stocks.length).setValues([
-      ["2330", "台積電", "TW", "TWD", "stock", true],
-      ["2317", "鴻海", "TW", "TWD", "stock", true],
-      ["006208", "富邦台50", "TW", "TWD", "ETF", true]
-    ]);
-  }
-
-  const stockMasterSheet = ss.getSheetByName(SHEETS.STOCK_MASTER);
-  if (stockMasterSheet.getLastRow() <= 1) {
-    formatSymbolColumn_(stockMasterSheet, HEADERS.StockMaster);
-    stockMasterSheet.getRange(2, 1, 3, HEADERS.StockMaster.length).setValues([
-      ["2330", "台積電", "TW", "TWD", "stock", "manual", formatDateTime_(new Date())],
-      ["2317", "鴻海", "TW", "TWD", "stock", "manual", formatDateTime_(new Date())],
-      ["006208", "富邦台50", "TW", "TWD", "ETF", "manual", formatDateTime_(new Date())]
-    ]);
-  }
-
-  const watchSheet = ss.getSheetByName(SHEETS.WATCHLIST);
-  if (watchSheet.getLastRow() <= 1) {
-    formatSymbolColumn_(watchSheet, HEADERS.Watchlist);
-    watchSheet.getRange(2, 1, 3, HEADERS.Watchlist.length).setValues([
-      ["2330", "台積電", "TW", "TWD", "stock", "核心觀察", "", "", true, formatDateTime_(new Date()), formatDateTime_(new Date())],
-      ["2317", "鴻海", "TW", "TWD", "stock", "盤整觀察", "", "", true, formatDateTime_(new Date()), formatDateTime_(new Date())],
-      ["006208", "富邦台50", "TW", "TWD", "ETF", "ETF", "", "", true, formatDateTime_(new Date()), formatDateTime_(new Date())]
-    ]);
-  }
-
-  const transSheet = ss.getSheetByName(SHEETS.TRANSACTIONS);
-  if (transSheet.getLastRow() <= 1) {
-    formatSymbolColumn_(transSheet, HEADERS.Transactions);
-    transSheet.getRange(2, 1, 2, HEADERS.Transactions.length).setValues([
-      ["T_SAMPLE_1", "2026-07-01", "BUY", "2330", "台積電", "TW", 10, 820, 20, 0, "TWD", "初始買進", formatDateTime_(new Date())],
-      ["T_SAMPLE_2", "2026-07-02", "BUY", "2317", "鴻海", "TW", 20, 200, 20, 0, "TWD", "觀察", formatDateTime_(new Date())]
-    ]);
-  }
-
-  const marketSheet = ss.getSheetByName(SHEETS.MARKET_INDEX);
-  if (marketSheet.getLastRow() <= 1) {
-    marketSheet.getRange(2, 1, 2, HEADERS.MarketIndex.length).setValues([
-      ["2020-01-01", "TAIEX", "加權指數", 12000, 0, 0, 0],
-      ["2020-01-01", "OTC", "櫃買指數", 150, 0, 0, 0]
-    ]);
-  }
-
-  const priceSheet = ss.getSheetByName(SHEETS.PRICES);
-  if (priceSheet.getLastRow() > 1) return;
-  formatSymbolColumn_(priceSheet, HEADERS.Prices);
-
-  const samples = [
-    { symbol: "2330", name: "台積電", market: "TW", start: 820, step: 2.0 },
-    { symbol: "2317", name: "鴻海", market: "TW", start: 205, step: -0.15 },
-    { symbol: "006208", name: "富邦台50", market: "TW", start: 110, step: 0.25 }
-  ];
-
-  const rows = [];
-  const startDate = new Date("2020-01-01");
-
-  samples.forEach(s => {
-    let close = s.start;
-    for (let i = 0; i < 80; i++) {
-      const d = new Date(startDate);
-      d.setDate(startDate.getDate() + i);
-
-      const wave = Math.sin(i / 4) * (s.start * 0.01);
-      close = close + s.step + Math.sin(i / 5) * 1.2;
-      const c = Math.max(1, close + wave);
-      const open = c * (1 + Math.sin(i) * 0.003);
-      const high = Math.max(open, c) * 1.01;
-      const low = Math.min(open, c) * 0.99;
-      const volume = Math.round(10000000 + Math.abs(Math.sin(i / 3)) * 20000000);
-
-      rows.push([
-        formatDate_(d),
-        s.symbol,
-        s.name,
-        s.market,
-        round_(open, 2),
-        round_(high, 2),
-        round_(low, 2),
-        round_(c, 2),
-        volume
-      ]);
-    }
-  });
-
-  priceSheet.getRange(2, 1, rows.length, HEADERS.Prices.length).setValues(rows);
+  return {
+    ok: true,
+    skipped: true,
+    message: "Sample data seeding is disabled in v10.1"
+  };
 }
-
 
 function removeRowsByPredicate_(sheetName, predicate) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();

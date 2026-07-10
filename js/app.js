@@ -7,46 +7,21 @@ const Mock = {
     message: "尚未取得真實資料。請確認 js/config.js 的 API_BASE_URL 已填入最新 Apps Script Web App URL，並且 GitHub Pages 已重新部署。"
   },
   portfolio: {
-    ok: true,
-    items: [
-      { symbol: "2330", name: "台積電", quantity: 10, avgCost: 820, lastPrice: 965, marketValue: 9650, unrealizedPnl: 1450, unrealizedRate: 17.68, trendText: "偏多" },
-      { symbol: "2317", name: "鴻海", quantity: 20, avgCost: 200, lastPrice: 190, marketValue: 3800, unrealizedPnl: -200, unrealizedRate: -5, trendText: "盤整觀察" }
-    ]
+    ok: false,
+    items: []
   },
   analysis: {
-    ok: true,
-    symbol: "2330",
-    name: "台積電",
-    portfolio: { avgCost: 820 },
-    latest: { close: 965, ma20: 920, ma60: 880, rsi14: 63, totalScore: 78, riskScore: 72, trendText: "偏多" },
-    prices: [
-      { date: "D1", close: 820, ma20: 815 },
-      { date: "D2", close: 835, ma20: 820 },
-      { date: "D3", close: 828, ma20: 826 },
-      { date: "D4", close: 845, ma20: 832 },
-      { date: "D5", close: 860, ma20: 840 },
-      { date: "D6", close: 875, ma20: 850 },
-      { date: "D7", close: 868, ma20: 858 },
-      { date: "D8", close: 890, ma20: 866 },
-      { date: "D9", close: 905, ma20: 875 },
-      { date: "D10", close: 915, ma20: 884 },
-      { date: "D11", close: 930, ma20: 894 },
-      { date: "D12", close: 925, ma20: 902 },
-      { date: "D13", close: 940, ma20: 910 },
-      { date: "D14", close: 955, ma20: 918 },
-      { date: "D15", close: 965, ma20: 920 }
-    ],
-    signals: [
-      { date: "2026-07-09", signalName: "收盤站上 MA20", direction: "bullish", note: "股價位於月線上方，趨勢偏多。" },
-      { date: "2026-07-09", signalName: "RSI 63", direction: "watch", note: "動能偏多，尚未進入過熱區。" }
-    ]
+    ok: false,
+    symbol: "",
+    name: "",
+    portfolio: {},
+    latest: {},
+    prices: [],
+    signals: []
   },
   transactions: {
-    ok: true,
-    items: [
-      { date: "2026-07-01", action: "BUY", symbol: "2330", name: "台積電", quantity: 10, price: 820, fee: 20, tax: 0, currency: "TWD", note: "初始買進" },
-      { date: "2026-07-02", action: "BUY", symbol: "2317", name: "鴻海", quantity: 20, price: 200, fee: 20, tax: 0, currency: "TWD", note: "觀察" }
-    ]
+    ok: false,
+    items: []
   }
 };
 
@@ -64,7 +39,10 @@ const pages = {
   analysis: {
     title: "線圖分析",
     subtitle: "收盤價線、MA20、平均成本線",
-    loader: () => loadAnalysis(normalizeSymbolInput(document.getElementById("analysisSymbol").value) || "2330")
+    loader: () => {
+      const symbol = normalizeSymbolInput(document.getElementById("analysisSymbol").value);
+      if (symbol) loadAnalysis(symbol);
+    }
   },
   transactions: {
     title: "交易紀錄",
@@ -88,7 +66,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btnLoadAnalysis").addEventListener("click", () => {
-    loadAnalysis(normalizeSymbolInput(document.getElementById("analysisSymbol").value) || "2330");
+    const symbol = normalizeSymbolInput(document.getElementById("analysisSymbol").value);
+    if (!symbol) {
+      setApiStatus("請先輸入股票代號");
+      return;
+    }
+    loadAnalysis(symbol);
   });
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
@@ -223,7 +206,7 @@ function setApiStatus(message) {
     return;
   }
 
-  el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，未顯示模擬行情";
+  el.textContent = Api.isConfigured() ? "已設定 API" : "未設定 API，無法取得真實資料";
 }
 
 function readCache(key) {
@@ -257,7 +240,7 @@ function clearCache(key) {
 }
 
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v10.0" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v10.1" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -751,11 +734,13 @@ async function onDeleteTransaction(btn) {
 
 function drawMainChart(rows, cost) {
   const svg = document.getElementById("mainChart");
+  const tooltip = document.getElementById("chartTooltip");
   const width = 920;
   const height = 420;
   const pad = 44;
 
   const validRows = rows.filter(r => isFinite(Number(r.close)));
+  if (tooltip) tooltip.hidden = true;
   if (!validRows.length) {
     svg.innerHTML = `<text x="40" y="80" fill="#94a3b8">沒有價格資料</text>`;
     return;
@@ -794,6 +779,11 @@ function drawMainChart(rows, cost) {
   const last = validRows[validRows.length - 1];
   const lastX = x(validRows.length - 1, validRows);
   const lastY = y(Number(last.close));
+  const chartPoints = validRows.map((row, i) => ({
+    x: x(i, validRows),
+    y: y(Number(row.close)),
+    row: row
+  }));
 
   let costLine = "";
   if (cost && isFinite(Number(cost))) {
@@ -818,11 +808,83 @@ function drawMainChart(rows, cost) {
     <polyline points="${pointsBy("close")}" fill="none" stroke="#22c55e" stroke-width="4" />
     <circle cx="${lastX}" cy="${lastY}" r="6" fill="#22c55e" stroke="#052e16" stroke-width="3" />
     <text x="${lastX - 46}" y="${lastY - 14}" fill="#e5e7eb" font-size="14">${number(last.close)}</text>
+    <g id="chartHoverLayer" class="chart-hover-layer" style="display:none">
+      <line id="chartHoverLine" x1="${lastX}" y1="${pad}" x2="${lastX}" y2="${height - pad}" />
+      <circle id="chartHoverDot" cx="${lastX}" cy="${lastY}" r="7" />
+    </g>
     <line x1="${pad}" y1="${pad}" x2="${pad}" y2="${height - pad}" stroke="#334155" />
     <line x1="${pad}" y1="${height - pad}" x2="${width - pad}" y2="${height - pad}" stroke="#334155" />
     <text x="${pad}" y="${height - 14}" fill="#94a3b8" font-size="13">${escapeHtml(validRows[0].date || "")}</text>
     <text x="${width - pad - 90}" y="${height - 14}" fill="#94a3b8" font-size="13">${escapeHtml(last.date || "")}</text>
   `;
+
+  bindMainChartHover(svg, tooltip, chartPoints, { width, height, pad, cost });
+}
+
+function bindMainChartHover(svg, tooltip, points, config) {
+  if (!svg || !tooltip || !points.length) return;
+
+  const layer = svg.querySelector("#chartHoverLayer");
+  const line = svg.querySelector("#chartHoverLine");
+  const dot = svg.querySelector("#chartHoverDot");
+  const width = config.width;
+  const pad = config.pad;
+  const step = (width - pad * 2) / Math.max(points.length - 1, 1);
+
+  function showPoint(index, event) {
+    const point = points[Math.max(0, Math.min(points.length - 1, index))];
+    const row = point.row || {};
+    const ma20 = Number(row.ma20);
+    const cost = Number(config.cost);
+
+    if (layer) layer.style.display = "";
+    if (line) {
+      line.setAttribute("x1", point.x);
+      line.setAttribute("x2", point.x);
+    }
+    if (dot) {
+      dot.setAttribute("cx", point.x);
+      dot.setAttribute("cy", point.y);
+    }
+
+    const parts = [
+      `<strong>${escapeHtml(row.date || "")}</strong>`,
+      `<span>收盤價 ${number(row.close)}</span>`
+    ];
+    if (isFinite(ma20)) parts.push(`<span>MA20 ${number(ma20)}</span>`);
+    if (isFinite(cost) && cost > 0) parts.push(`<span>平均成本 ${number(cost)}</span>`);
+
+    tooltip.innerHTML = parts.join("");
+    tooltip.hidden = false;
+
+    const wrap = svg.parentElement;
+    const svgRect = svg.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const leftInSvg = (point.x / width) * svgRect.width;
+    const tooltipWidth = tooltip.offsetWidth || 160;
+    const top = event.clientY - wrapRect.top - 62;
+    const left = svgRect.left - wrapRect.left + leftInSvg + 12;
+    const boundedLeft = Math.max(8, Math.min(left, wrapRect.width - tooltipWidth - 8));
+
+    tooltip.style.left = `${boundedLeft}px`;
+    tooltip.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function onMove(event) {
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width) return;
+    const svgX = (event.clientX - rect.left) * (width / rect.width);
+    const index = Math.round((svgX - pad) / step);
+    showPoint(index, event);
+  }
+
+  function hide() {
+    if (layer) layer.style.display = "none";
+    tooltip.hidden = true;
+  }
+
+  svg.onpointermove = onMove;
+  svg.onpointerleave = hide;
 }
 
 function sparkline(values, color = "#22c55e", width = 150, height = 36) {

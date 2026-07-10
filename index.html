@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StockLab 股票管理</title>
+  <title>StockLab</title>
   <meta name="theme-color" content="#050816" />
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -14,7 +14,7 @@
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
-      <div class="app-version" id="appVersion">v10.0</div>
+      <div class="app-version" id="appVersion">v10.1</div>
       <nav class="nav">
         <button class="nav-btn active" data-page="dashboard">首頁總覽</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
@@ -45,7 +45,6 @@
           <div class="panel-header">
             <div>
               <h2>我的關注股票</h2>
-              <div class="muted">首頁建議放迷你線圖，快速看方向</div>
             </div>
             <button id="btnToggleWatchForm">＋ 新增關注股票</button>
           </div>
@@ -97,7 +96,6 @@
           <div class="panel-header">
             <div>
               <h2>我的庫存</h2>
-              <div class="muted">由 Transactions 自動計算平均成本與損益</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -125,11 +123,11 @@
           <div class="panel-header">
             <div>
               <h2 id="analysisTitle">線圖分析</h2>
-              <div class="muted">收盤價線 + MA20 + 成本線</div>
+
             </div>
 
             <div class="inline-form">
-              <input id="analysisSymbol" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 2330" value="2330" />
+              <input id="analysisSymbol" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 006208" />
               <button id="btnLoadAnalysis">查詢</button>
             </div>
           </div>
@@ -138,6 +136,7 @@
             <div>
               <div class="chart-wrap">
                 <svg id="mainChart" viewBox="0 0 920 420" preserveAspectRatio="none"></svg>
+                <div id="chartTooltip" class="chart-tooltip" hidden></div>
               </div>
 
               <div class="legend">

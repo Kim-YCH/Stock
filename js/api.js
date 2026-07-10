@@ -6,7 +6,7 @@ const Api = (() => {
   function jsonp(action, params = {}) {
     return new Promise((resolve, reject) => {
       if (!isConfigured()) {
-        reject(new Error("尚未設定 API_BASE_URL，使用假資料"));
+        reject(new Error("尚未設定 API_BASE_URL，無法取得真實資料"));
         return;
       }
 
