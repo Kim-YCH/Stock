@@ -433,20 +433,28 @@ async function loadDashboard() {
 }
 
 function renderDashboard(data) {
-  renderUpdateStatus(data.updatedAt, data.dataDate, data.version);
+  const lastRun = data.lastRun || {};
+  const dataDate = data.dataDate || lastRun.dataDate || "";
+  const updatedAt = data.updatedAt || lastRun.finishedAt || lastRun.updatedAt || "";
+
+  renderUpdateStatus(updatedAt, dataDate, data.version, lastRun);
   renderMarketCards(data.market || []);
   renderWatchlist(data.watchlist || []);
 }
 
-function renderUpdateStatus(updatedAt, dataDate, version) {
+function renderUpdateStatus(updatedAt, dataDate, version, lastRun = {}) {
   const el = document.getElementById("dashboardUpdateStatus");
   if (!el) return;
 
-  const displayVersion = version || getAppVersion();
+  const displayVersion = version || lastRun.version || getAppVersion();
   const today = formatLocalDate(new Date());
 
   if (!dataDate) {
     el.className = "update-status warning";
+    if (lastRun.ok === true) {
+      el.textContent = `已執行每日更新 ${updatedAt || ""}，尚未建立資料日期${displayVersion ? " · " + displayVersion : ""}`;
+      return;
+    }
     el.textContent = `尚未建立更新資料${displayVersion ? " · " + displayVersion : ""}`;
     return;
   }
@@ -458,7 +466,7 @@ function renderUpdateStatus(updatedAt, dataDate, version) {
   }
 
   el.className = "update-status warning";
-  el.textContent = `資料日期 ${dataDate}，尚未更新到今日${displayVersion ? " · " + displayVersion : ""}`;
+  el.textContent = `資料日期 ${dataDate}，最後更新 ${updatedAt || "尚未記錄"}${displayVersion ? " · " + displayVersion : ""}`;
 }
 
 function renderMarketCards(items) {

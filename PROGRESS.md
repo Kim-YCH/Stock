@@ -412,3 +412,13 @@ Changes:
 - Stopped `setupDatabase()` from writing sample data.
 - Removed frontend fake portfolio, analysis, and transaction fallback rows.
 - Added chart hover tooltip for single-point close price, MA20, and average cost.
+
+### v10.1 dataDate fix
+
+Changes:
+
+- Fixed `DashboardCache.dashboard.dataDate` fallback when sheet date values cannot be parsed.
+- `normalizeMarketDate_()` now handles Google Sheets Date objects and Date-like strings.
+- Dashboard response now includes `lastRun` and falls back to `lastRun.dataDate`.
+- Frontend update status now falls back to `data.lastRun` before showing an empty update state.
+- `DashboardCache.version.dataDate` continues to use the dashboard `dataDate`.

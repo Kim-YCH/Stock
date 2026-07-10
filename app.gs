@@ -849,6 +849,7 @@ function updateDailyClosePricesOnly_(params) {
     };
 
     writeDashboardCache_("lastRun", lastRun);
+    safeRefreshDashboardCache_();
     throw new Error(message);
   }
 
@@ -864,7 +865,6 @@ function updateDailyClosePricesOnly_(params) {
   }
 
   calculateAllAnalysis();
-  const cacheResult = refreshDashboardCache_();
 
   const result = {
     ok: true,
@@ -879,15 +879,17 @@ function updateDailyClosePricesOnly_(params) {
     updated: upsertResult.updated,
     marketIndex: marketResult,
     demoCleanup: demoCleanup,
-    cache: {
-      ok: true,
-      updatedAt: cacheResult.updatedAt,
-      dataDate: cacheResult.dataDate
-    },
     errors: errors.slice(0, 5),
     updatedAt: formatDateTime_(new Date())
   };
 
+  writeDashboardCache_("lastRun", result);
+  const cacheResult = refreshDashboardCache_();
+  result.cache = {
+    ok: true,
+    updatedAt: cacheResult.updatedAt,
+    dataDate: cacheResult.dataDate
+  };
   writeDashboardCache_("lastRun", result);
   return result;
 }
@@ -1577,8 +1579,18 @@ function toRocDate_(date) {
 }
 
 function normalizeMarketDate_(value, fallbackDate) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    return formatDate_(value);
+  }
+
   const s = String(value || "").trim();
   if (!s) return fallbackDate;
+
+  // Google Sheets can expose dates as strings like "Fri Jul 10 2026 ...".
+  const parsedDate = new Date(s);
+  if (!isNaN(parsedDate.getTime()) && /[A-Za-z]{3}/.test(s)) {
+    return formatDate_(parsedDate);
+  }
 
   // 民國年：115/07/09
   const roc = s.match(/^(\d{2,3})\/(\d{1,2})\/(\d{1,2})$/);
@@ -1751,11 +1763,17 @@ function buildDashboardResponseFromSheets_() {
     trend: []
   });
 
+  const lastRun = readDashboardCacheFromSheet_("lastRun") || {};
+  const latestDataDate = getLatestMarketOrPriceDate_();
+  const fallbackDataDate = normalizeMarketDate_(lastRun.dataDate, "");
+  const dataDate = latestDataDate || fallbackDataDate || "";
+
   return {
     ok: true,
     version: APP_VERSION,
     updatedAt: formatDateTime_(new Date()),
-    dataDate: getLatestMarketOrPriceDate_(),
+    dataDate: dataDate,
+    lastRun: lastRun,
     market: marketRows,
     watchlist: watchlistRows
   };
@@ -2009,6 +2027,7 @@ function runDailyCloseUpdate() {
     };
 
     writeDashboardCache_("lastRun", lastRun);
+    safeRefreshDashboardCache_();
     return lastRun;
   } catch (err) {
     const lastRun = {
@@ -2022,6 +2041,7 @@ function runDailyCloseUpdate() {
     };
 
     writeDashboardCache_("lastRun", lastRun);
+    safeRefreshDashboardCache_();
     return lastRun;
   }
 }
