@@ -67,9 +67,23 @@ const Api = (() => {
 
   return {
     isConfigured,
+    getBackendVersion: () => jsonp("version"),
     getDashboard: () => jsonp("dashboard"),
+    getStrategyModels: () => jsonp("strategyModels"),
+    getCandidates: (strategyType) => jsonp("candidates", { strategyType }),
+    getPaperSummary: () => jsonp("paperSummary"),
+    createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
+    togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),
+    runPaperTrading: () => jsonp("runPaperTrading"),
+    runBacktest: (data) => jsonp("runBacktest", data),
+    runBacktestComparison: (data) => jsonp("runBacktestComparison", data),
+    getBacktestRuns: () => jsonp("backtestRuns"),
+    getBacktestResult: (runId) => jsonp("backtestResult", { runId }),
     getPortfolio: () => jsonp("portfolio"),
-    getAnalysis: (symbol) => jsonp("analysis", { symbol }),
+    getAnalysis: (symbol, force = false) => jsonp("analysis", {
+      symbol,
+      force: force ? "1" : undefined
+    }),
     getTransactions: () => jsonp("transactions"),
     lookupStock: (symbol) => jsonp("lookupStock", { symbol }),
     addWatchlist: (data) => jsonp("addWatchlist", data),

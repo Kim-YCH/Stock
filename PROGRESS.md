@@ -422,3 +422,135 @@ Changes:
 - Dashboard response now includes `lastRun` and falls back to `lastRun.dataDate`.
 - Frontend update status now falls back to `data.lastRun` before showing an empty update state.
 - `DashboardCache.version.dataDate` continues to use the dashboard `dataDate`.
+
+### v10.2 analysis cache
+
+完成：
+
+- 技術分析頁改用 DashboardCache 快取
+- getAnalysis_ 不再即時計算 Portfolio
+- 新增 analysis:symbol 快取
+- 每日更新 / 歷史回補後自動重建線圖快取
+- 前端線圖頁加入 memory cache，避免重複 API request
+- 改善線圖頁載入速度
+
+### v10.3 Candidate List / Paper Trading / Backtest Planning
+
+新增：
+
+- 候選清單頁
+- 買入候選從 Watchlist 自動產生
+- 賣出候選從 Portfolio 自動產生
+- 新增 candidates 快取
+- 新增虛擬交易資料表規劃
+- 新增 PaperStrategies / PaperPositions / PaperTrades / PaperPerformance 規劃
+- 新增策略回測規劃
+- 新增 BacktestRuns / BacktestResults 規劃
+- 新增 Bollinger Bands / KD / ATR / ADX / 支撐壓力欄位規劃
+- 保持真實交易與虛擬交易分離
+
+### v10.4 Default Paper Trading Rules
+
+完成：
+
+- 新增 StockLab 內建「平衡型波段策略」
+- 使用者不需要自行設定買賣規則
+- 候選清單、虛擬交易、回測共用同一套預設規則
+- 買入條件包含 totalScore、riskScore、RSI、MA20、MACD、volumeRatio、Bollinger Bands 與 ADX
+- 賣出條件包含跌破 MA20、MACD 轉弱、分數轉弱、停損、漲多轉弱停利
+- 新增 Bollinger Bands、KD、ATR、ADX 與 20 日支撐壓力指標
+- 新增 PaperStrategies、PaperPositions、PaperTrades、PaperOrders、PaperPerformance
+- 新增每日虛擬交易與 paper 快取
+- 新增 BacktestRuns、BacktestResults、回測績效、交易明細與資產曲線
+- 加權指數與個股每日更新使用同一交易日期
+- 虛擬交易不影響正式庫存與正式交易紀錄
+- 每日行情更新後可自動執行虛擬交易
+
+### v10.5 Backtest Diagnostics
+
+完成：
+
+- 放寬內建波段策略買進規則，避免進階指標缺欄位時完全無法交易
+- 回測前會檢查 Indicators 覆蓋率，必要時自動重建技術指標
+- 回測結果新增 diagnostics，顯示交易日、價格筆數、指標覆蓋與買點天數
+- 前端回測頁顯示零交易原因，避免只看到水平資產曲線
+
+### v10.6 Analysis Chart Lines
+
+完成：
+
+- analysis 快取新增 schemaVersion，舊快取會自動重建
+- 線圖資料新增 MA5、MA60、布林上下軌、20 日高低
+- 技術分析頁新增技術線勾選，預設只顯示 MA20
+- 收盤價與平均成本固定顯示，不提供關閉
+- 前端顯示技術指標缺漏提示，協助判斷是否尚未重新計算 Indicators
+
+### v10.7 Analysis Cache Repair
+
+完成：
+
+- analysis 快取有效性新增技術欄位檢查
+- 若價格歷史足夠但 KD / 布林 / ATR / ADX / 20 日高低缺值，會跳過舊快取並重建
+- 若最新 Prices 日期比最新 Indicators 日期新，線圖查詢會先重算 Indicators
+
+### v10.8 Strategy Models
+
+完成：
+
+- 新增 5 組可選技術指標策略：多指標平衡、趨勢順勢、量價突破、多頭回檔、低波動防守
+- 虛擬交易建立策略時可選模型，並保存 strategyType 與該模型買賣規則
+- 每日虛擬交易改為執行各策略自己的 buyRuleJson / sellRuleJson
+- 策略回測可選模型，回測結果與交易原因會標示實際策略名稱
+- 前端顯示策略風險、適用情境、買進摘要與賣出摘要
+- 新增 strategyModels API，前端保留內建清單作為舊後端過渡備援
+
+### v10.9 Multi-model Backtest / Next-day Candidates
+
+完成：
+
+- 策略回測支援複選模型，所有模型共用同一份 Prices / Indicators 與日期索引
+- 多模型結果完成後一次批次寫入 BacktestRuns / BacktestResults，避免重複整表寫入
+- 新增 runBacktestComparison API，一次回傳多模型績效與獨立交易明細
+- 前端新增模型比較表，顯示報酬、損益、交易次數、勝率、最大回撤與 Profit Factor
+- 資產曲線可同時疊加多個策略，並可切換目前查看的模型明細
+- 候選清單可選策略模型，每個模型使用獨立 DashboardCache
+- 候選狀態標示最新盤後資料日期，明確定位為下一交易日決策參考
+- 舊版 candidates 快取會依 APP_VERSION / strategyType / decisionFor 自動失效重建
+- 每次平衡型候選重建時同步清除其他模型舊快取，避免每日更新或交易異動後讀到前一版候選
+
+### v10.10 Market Index Date Repair
+
+完成：
+
+- 修正 2026-07-09 真實 TAIEX 被舊版測試日期規則過濾的問題
+- clearDemoData 不再以 2026 日期區間刪除 Prices，避免誤刪正式歷史行情
+- 大盤測試資料改為只比對可確認的假數值，不再只憑日期判定
+- 7/10、7/11 官方 MI_INDEX 為空表時，會正確保留最近交易日 7/9
+- 關注股偏多與風險提醒改顯示 Indicators 最新交易日，不再於週末顯示日曆日期
+
+### v10.11 Frontend / Backend Version Badge
+
+完成：
+
+- 側邊欄分開顯示前端版本與 Dashboard API 回傳的後端版本
+- 前後端版本一致時以綠色標示
+- Web App 仍為舊部署時顯示黃色「版本不一致」警告
+- API 尚未回應時顯示後端尚未確認，避免把前端版本誤認成部署版本
+
+### v10.12 Dashboard Cache Version Repair
+
+完成：
+
+- dashboard CacheService 與 DashboardCache JSON 必須符合目前 APP_VERSION 才會使用
+- 發現舊版 dashboard 快取時自動重建並覆寫，不再讓新部署回傳舊版 JSON
+- local 前端的 CSS / config.js / api.js / app.js 加入版本參數，避免瀏覽器沿用舊靜態檔
+- 前端與後端版本徽章更新為 v10.12，可直接辨識部署與快取狀態
+
+### v10.13 Runtime Backend Version
+
+完成：
+
+- 新增 action=version，直接回傳目前 Web App runtime 的 APP_VERSION
+- version API 完全不讀 CacheService 或 DashboardCache
+- 前端後端版本徽章優先使用 runtime version，不再被舊 dashboard JSON 誤導
+- 舊部署沒有 version action 時，才退回 dashboard.version 顯示
