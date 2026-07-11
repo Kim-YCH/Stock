@@ -122,10 +122,46 @@ const STRATEGY_MODELS_FALLBACK = [
     description: "偏好低 ATR、風險分數高且均線結構向上的標的。",
     buySummary: "MA20 高於 MA60、價格站上 MA20，ATR 較低且風險分數較高。",
     sellSummary: "跌破 MA60、月線與動能同步轉弱，或較緊的停損停利。"
+  },
+  {
+    strategyType: "SCORE_ROTATION_V1",
+    strategyName: "分數輪動策略",
+    riskLevel: "中高",
+    bestFor: "想用盤後技術分數挑隔日強勢候選",
+    description: "以總分、趨勢、動能與風險分數做輪動篩選，避免只看單一指標。",
+    buySummary: "總分與風險分數達標，趨勢或突破至少一項強，且收盤站上短均線。",
+    sellSummary: "分數轉弱、跌破 MA20、MACD 轉空，或觸發停損停利。"
+  },
+  {
+    strategyType: "EARLY_TURNAROUND_V1",
+    strategyName: "早期轉強策略",
+    riskLevel: "中等",
+    bestFor: "回檔後剛轉強、還沒明顯追高的標的",
+    description: "用 KD、MACD、布林位置與 RSI 捕捉偏早的轉強訊號。",
+    buySummary: "RSI 由低檔回升區、KD 偏多、MACD 不再惡化，且風險分數可接受。",
+    sellSummary: "轉強失敗、跌破 MA20 或風險分數惡化即退出。"
+  },
+  {
+    strategyType: "MOMENTUM_CONTINUATION_V1",
+    strategyName: "動能續強策略",
+    riskLevel: "高",
+    bestFor: "主升段或產業輪動明顯時的強勢股",
+    description: "用 MA 結構、MACD、量比、突破分數與 ADX 篩選續強標的。",
+    buySummary: "MA20 高於 MA60，價格站上 MA20，MACD 與量能確認動能延續。",
+    sellSummary: "跌破短均線且動能降溫，或高檔過熱後轉弱。"
+  },
+  {
+    strategyType: "ETF_STABLE_SWING_V1",
+    strategyName: "ETF 穩定波段策略",
+    riskLevel: "低",
+    bestFor: "ETF、大型權值股與低波動配置",
+    description: "偏重低 ATR、MA 結構、風險分數與不過熱的布林位置。",
+    buySummary: "低波動、MA20 高於 MA60，價格站上 MA20，RSI 與布林位置不過熱。",
+    sellSummary: "跌破 MA60、風險轉弱，或達到較保守的獲利保護。"
   }
 ];
 let strategyModels = STRATEGY_MODELS_FALLBACK.slice();
-const STRATEGY_CHART_COLORS = ["#38bdf8", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa"];
+const STRATEGY_CHART_COLORS = ["#38bdf8", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa", "#14b8a6", "#fb7185", "#84cc16", "#eab308"];
 const analysisMemoryCache = new Map();
 const analysisRequests = new Map();
 const ANALYSIS_LINE_OPTIONS = [
@@ -358,7 +394,7 @@ function clearCache(key) {
 }
 
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v10.13" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v10.14" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -598,9 +634,8 @@ function renderDashboard(data) {
 }
 
 async function loadCandidates() {
-  const strategyType = document.getElementById("candidateStrategyType").value;
   try {
-    const data = await Api.getCandidates(strategyType);
+    const data = await Api.getCandidates();
     currentCandidateData = data;
     renderCandidates(data);
     setApiStatus("候選清單已更新");
@@ -616,14 +651,15 @@ function renderCandidates(data) {
   const buyItems = sortCandidateItems(data.buyCandidates || [], sortMode, false);
   const sellItems = sortCandidateItems(data.sellCandidates || [], sortMode, true);
   const status = document.getElementById("candidateStatus");
-  const selectedModel = getStrategyModel(data.strategyType || document.getElementById("candidateStrategyType").value);
-  const strategyName = data.strategyName || (selectedModel && selectedModel.strategyName) || "策略模型";
-  status.textContent = `盤後資料 ${data.dataDate || "尚未建立"} · ${strategyName} · 買入 ${buyItems.length} 檔 · 賣出 ${sellItems.length} 檔 · 供下一交易日參考`;
+  const strategyName = data.strategyName || "全模型候選";
+  const modelCount = Number(data.modelCount || (data.models || strategyModels).length || 0);
+  status.textContent = `盤後資料 ${data.dataDate || "尚未建立"} · ${strategyName}${modelCount ? ` ${modelCount} 個模型` : ""} · 買入 ${buyItems.length} 檔 · 賣出 ${sellItems.length} 檔 · 供下一交易日參考`;
 
   document.getElementById("buyCandidatesBody").innerHTML = buyItems.length
     ? buyItems.map(item => `
         <tr>
           <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+          <td data-label="模型" class="candidate-models">${formatCandidateModels(item)}</td>
           <td data-label="收盤價">${number(item.close)}</td>
           <td data-label="RSI">${number(item.rsi14)}</td>
           <td data-label="技術分數">${number(item.totalScore)}</td>
@@ -633,7 +669,7 @@ function renderCandidates(data) {
           <td data-label="符合原因" class="candidate-reason">${escapeHtml(item.reason || "")}</td>
         </tr>
       `).join("")
-    : candidateEmptyRow(`目前沒有符合「${strategyName}」的買入候選`, 8);
+    : candidateEmptyRow(`目前沒有符合「${strategyName}」的買入候選`, 9);
 
   document.getElementById("sellCandidatesBody").innerHTML = sellItems.length
     ? sellItems.map(item => {
@@ -641,6 +677,7 @@ function renderCandidates(data) {
         return `
           <tr>
             <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+            <td data-label="模型" class="candidate-models">${formatCandidateModels(item)}</td>
             <td data-label="收盤價">${number(item.close)}</td>
             <td data-label="平均成本">${number(item.avgCost)}</td>
             <td data-label="持有股數">${number(item.quantity)}</td>
@@ -654,7 +691,7 @@ function renderCandidates(data) {
           </tr>
         `;
       }).join("")
-    : candidateEmptyRow(`目前沒有符合「${strategyName}」的賣出候選`, 11);
+    : candidateEmptyRow(`目前沒有符合「${strategyName}」的賣出候選`, 12);
 }
 
 function sortCandidateItems(items, mode, isSell) {
@@ -671,11 +708,20 @@ function candidateEmptyRow(message, colspan) {
   return `<tr><td colspan="${colspan}" class="candidate-empty">${escapeHtml(message)}</td></tr>`;
 }
 
+function formatCandidateModels(item) {
+  const matched = Array.isArray(item.matchedModels) ? item.matchedModels : [];
+  const names = matched.length
+    ? matched.map(model => model.strategyName || model.strategyType).filter(Boolean)
+    : String(item.modelNames || item.strategyName || "").split(/[、,]/).map(name => name.trim()).filter(Boolean);
+  const unique = Array.from(new Set(names));
+  if (!unique.length) return escapeHtml("未標示");
+  return unique.map(name => `<span>${escapeHtml(name)}</span>`).join("");
+}
+
 function setupStrategyModelSelectors() {
   renderStrategyModelSelectors();
 
   const paperSelect = document.getElementById("paperStrategyType");
-  const candidateSelect = document.getElementById("candidateStrategyType");
   const backtestOptions = document.getElementById("backtestStrategyOptions");
   if (paperSelect) {
     paperSelect.addEventListener("change", () => {
@@ -683,12 +729,6 @@ function setupStrategyModelSelectors() {
       const model = getStrategyModel(paperSelect.value);
       const nameInput = document.querySelector("#paperStrategyForm input[name='name']");
       if (model && nameInput) nameInput.value = model.strategyName;
-    });
-  }
-  if (candidateSelect) {
-    candidateSelect.addEventListener("change", () => {
-      updateStrategyModelInfo("candidateStrategyType", "candidateStrategyInfo");
-      loadCandidates();
     });
   }
   if (backtestOptions) backtestOptions.addEventListener("change", updateBacktestStrategyInfo);
@@ -712,7 +752,7 @@ async function loadStrategyModels() {
 }
 
 function renderStrategyModelSelectors() {
-  ["paperStrategyType", "candidateStrategyType"].forEach(id => {
+  ["paperStrategyType"].forEach(id => {
     const select = document.getElementById(id);
     if (!select) return;
     const current = select.value || "MULTI_FACTOR_BALANCED_V1";
@@ -720,8 +760,17 @@ function renderStrategyModelSelectors() {
     select.value = strategyModels.some(model => model.strategyType === current) ? current : "MULTI_FACTOR_BALANCED_V1";
   });
   updateStrategyModelInfo("paperStrategyType", "paperStrategyInfo");
-  updateStrategyModelInfo("candidateStrategyType", "candidateStrategyInfo");
+  renderCandidateStrategyOverview();
   renderBacktestStrategyOptions();
+}
+
+function renderCandidateStrategyOverview() {
+  const target = document.getElementById("candidateStrategyInfo");
+  if (!target) return;
+  const names = strategyModels.map(model => model.strategyName).join("、");
+  target.innerHTML = `
+    <div class="strategy-model-heading"><strong>全模型候選</strong><span>${strategyModels.length} 個模型</span></div>
+    <div>${escapeHtml(names)}</div>`;
 }
 
 function renderBacktestStrategyOptions() {

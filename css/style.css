@@ -232,11 +232,11 @@ h1, h2, h3 {
 .candidate-model-info { margin: -8px 0 18px; }
 
 .candidate-section table {
-  min-width: 920px;
+  min-width: 1040px;
 }
 
 .candidate-section:last-child table {
-  min-width: 1240px;
+  min-width: 1360px;
 }
 
 .candidate-reason {
@@ -244,6 +244,26 @@ h1, h2, h3 {
   max-width: 420px;
   white-space: normal;
   line-height: 1.55;
+}
+
+.candidate-models {
+  min-width: 150px;
+  white-space: normal;
+}
+
+.candidate-models span,
+.candidate-models em {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 7px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 999px;
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.08);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .candidate-empty {

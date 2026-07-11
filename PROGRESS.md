@@ -554,3 +554,14 @@ Changes:
 - version API 完全不讀 CacheService 或 DashboardCache
 - 前端後端版本徽章優先使用 runtime version，不再被舊 dashboard JSON 誤導
 - 舊部署沒有 version action 時，才退回 dashboard.version 顯示
+
+### v10.14 All-model Candidates
+
+完成：
+
+- 候選清單改為一次掃描全部策略模型，任一模型達標即列入表格
+- 買入 / 賣出候選新增命中模型欄位，同一檔股票可顯示多個命中模型
+- candidates 快取改為全模型版本，並以 modelSignature 防止舊模型清單快取沿用
+- 新增分數輪動、早期轉強、動能續強、ETF 穩定波段四個策略模型
+- 回測 / 虛擬交易 / strategyModels API 共用同一份模型清單
+- 前端候選頁移除單模型下拉，改為全模型候選與模型命中標籤

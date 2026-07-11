@@ -8,14 +8,14 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=10.13" />
+  <link rel="stylesheet" href="css/style.css?v=10.14" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v10.13</div>
+        <div class="app-version" id="appVersion">前端 v10.14</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
@@ -102,15 +102,6 @@
             <div id="candidateStatus" class="muted">尚未載入候選資料</div>
           </div>
           <div class="candidate-actions">
-            <label class="candidate-sort">策略模型
-              <select id="candidateStrategyType">
-                <option value="MULTI_FACTOR_BALANCED_V1">多指標平衡波段策略</option>
-                <option value="TREND_FOLLOWING_V1">趨勢順勢策略</option>
-                <option value="VOLUME_BREAKOUT_V1">量價突破策略</option>
-                <option value="BULL_PULLBACK_V1">多頭回檔策略</option>
-                <option value="LOW_VOLATILITY_V1">低波動防守策略</option>
-              </select>
-            </label>
             <label class="candidate-sort">排序
               <select id="candidateSort">
                 <option value="score">分數高到低</option>
@@ -135,6 +126,7 @@
               <thead>
                 <tr>
                   <th>股票</th>
+                  <th>模型</th>
                   <th>收盤價</th>
                   <th>RSI</th>
                   <th>技術分數</th>
@@ -161,6 +153,7 @@
               <thead>
                 <tr>
                   <th>股票</th>
+                  <th>模型</th>
                   <th>收盤價</th>
                   <th>平均成本</th>
                   <th>持有股數</th>
@@ -191,6 +184,10 @@
               <option value="VOLUME_BREAKOUT_V1">量價突破策略</option>
               <option value="BULL_PULLBACK_V1">多頭回檔策略</option>
               <option value="LOW_VOLATILITY_V1">低波動防守策略</option>
+              <option value="SCORE_ROTATION_V1">分數輪動策略</option>
+              <option value="EARLY_TURNAROUND_V1">早期轉強策略</option>
+              <option value="MOMENTUM_CONTINUATION_V1">動能續強策略</option>
+              <option value="ETF_STABLE_SWING_V1">ETF 穩定波段策略</option>
             </select>
           </label>
           <label>策略名稱<input name="name" value="多指標平衡波段策略" required /></label>
@@ -363,8 +360,8 @@
     </main>
   </div>
 
-  <script src="js/config.js?v=10.13"></script>
-  <script src="js/api.js?v=10.13"></script>
-  <script src="js/app.js?v=10.13"></script>
+  <script src="js/config.js?v=10.14"></script>
+  <script src="js/api.js?v=10.14"></script>
+  <script src="js/app.js?v=10.14"></script>
 </body>
 </html>

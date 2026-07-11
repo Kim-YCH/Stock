@@ -70,7 +70,7 @@ const Api = (() => {
     getBackendVersion: () => jsonp("version"),
     getDashboard: () => jsonp("dashboard"),
     getStrategyModels: () => jsonp("strategyModels"),
-    getCandidates: (strategyType) => jsonp("candidates", { strategyType }),
+    getCandidates: () => jsonp("candidates"),
     getPaperSummary: () => jsonp("paperSummary"),
     createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
     togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),
