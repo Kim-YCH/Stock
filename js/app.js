@@ -79,89 +79,71 @@ const CACHE_KEYS = {
 };
 const STRATEGY_MODELS_FALLBACK = [
   {
-    strategyType: "MULTI_FACTOR_BALANCED_V1",
-    strategyName: "多指標平衡波段策略",
+    strategyType: "PERSISTENT_MOMENTUM_V2",
+    strategyName: "持續動能波段策略",
     riskLevel: "中等",
-    bestFor: "一般個股與 ETF 的波段比較",
-    description: "綜合趨勢、動能、風險、KD、布林、ATR 與 ADX，訊號較均衡。",
-    buySummary: "站上 MA20、MACD 正向，搭配分數、RSI 與趨勢確認。",
-    sellSummary: "跌破 MA20、動能轉弱、分數惡化或觸發停損停利。"
+    bestFor: "大盤多方、連續轉強 2 至 4 週的個股",
+    description: "要求報酬具有持續性、均線向上且大盤同步多方，排除單日暴衝的假動能。",
+    buySummary: "大盤站上 MA20，個股 MA5 > MA20 > MA60，20 日正報酬且 10 日至少 6 日上漲。",
+    sellSummary: "跌破趨勢、回撤 4%、停損 5%，或持有滿 20 個交易日。"
   },
   {
-    strategyType: "TREND_FOLLOWING_V1",
-    strategyName: "趨勢順勢策略",
+    strategyType: "TREND_PULLBACK_V2",
+    strategyName: "多頭回檔確認策略",
+    riskLevel: "中低",
+    bestFor: "一個月內的多頭回檔反彈",
+    description: "只在大盤與中期趨勢向上時，等待價格回到 MA20 附近且 KD 重新轉強。",
+    buySummary: "MA20 向上且高於 MA60，價格靠近 MA20、RSI 42 至 58、KD 偏多。",
+    sellSummary: "跌破 MA60、停損 4.5%、回撤 3.5%，或持有滿 15 個交易日。"
+  },
+  {
+    strategyType: "CONFIRMED_BREAKOUT_V2",
+    strategyName: "確認突破短波段策略",
     riskLevel: "中高",
-    bestFor: "趨勢明確、成交活躍的個股",
-    description: "使用 MA20 / MA60、ADX、DI 與 MACD 確認趨勢後順勢進場。",
-    buySummary: "收盤高於 MA20、MA20 高於 MA60，ADX 與 +DI 確認多頭。",
-    sellSummary: "跌破 MA20 且動能轉弱、空方 DI 轉強，或觸發停損停利。"
+    bestFor: "帶量突破前 20 日高點、預計持有 1 至 3 週",
+    description: "使用不含當日的前 20 日高點，配合量能、ADX 與上漲持續度確認突破。",
+    buySummary: "收盤突破前 20 日高點、量比至少 1.2，且趨勢強度與大盤方向一致。",
+    sellSummary: "突破失敗、回撤 4%、停損 5%，或持有滿 15 個交易日。"
   },
   {
-    strategyType: "VOLUME_BREAKOUT_V1",
-    strategyName: "量價突破策略",
-    riskLevel: "高",
-    bestFor: "接近 20 日高點且量能放大的強勢股",
-    description: "用 20 日高點、成交量、布林位置與動能分數尋找突破。",
-    buySummary: "突破分數達標、量比放大、站上 MA20，且 RSI 尚未極端過熱。",
-    sellSummary: "跌回 MA20、突破失敗與 MACD 轉弱，或快速停損停利。"
-  },
-  {
-    strategyType: "BULL_PULLBACK_V1",
-    strategyName: "多頭回檔策略",
+    strategyType: "OVERSOLD_REBOUND_V2",
+    strategyName: "多頭超賣反彈策略",
     riskLevel: "中等",
-    bestFor: "MA20 高於 MA60、短線拉回的標的",
-    description: "只在中期多頭結構內，利用 RSI、KD 與布林位置等待回檔。",
-    buySummary: "MA20 高於 MA60，價格守住 MA60，RSI 與布林位置落在回檔區。",
-    sellSummary: "跌破 MA60、MACD 續弱、反彈達標或觸發停損。"
+    bestFor: "大盤仍偏多、個股短線急跌後的 1 至 2 週反彈",
+    description: "只接中期多頭內的短線超賣，要求 KD 與 MACD 柱狀體開始改善。",
+    buySummary: "MA20 高於 MA60，價格守住 MA60，RSI 與布林進入超賣區後開始轉強。",
+    sellSummary: "反彈回 MA20、RSI 達 60、停損 3.5%，或持有滿 10 個交易日。"
   },
   {
-    strategyType: "LOW_VOLATILITY_V1",
-    strategyName: "低波動防守策略",
+    strategyType: "ETF_TREND_V2",
+    strategyName: "ETF 月線趨勢策略",
     riskLevel: "低",
-    bestFor: "大型股、ETF 與偏穩健的波段配置",
-    description: "偏好低 ATR、風險分數高且均線結構向上的標的。",
-    buySummary: "MA20 高於 MA60、價格站上 MA20，ATR 較低且風險分數較高。",
-    sellSummary: "跌破 MA60、月線與動能同步轉弱，或較緊的停損停利。"
+    bestFor: "0050、006208 等低波動 ETF 的一個月波段",
+    description: "以大盤、月線斜率、20 日報酬與低 ATR 判斷 ETF 趨勢，減少過度交易。",
+    buySummary: "大盤與 ETF 同步多方、MA20 向上、20 日報酬溫和且 ATR 偏低。",
+    sellSummary: "月線轉弱、回撤 2.5%、停損 3%，或持有滿 20 個交易日。"
   },
   {
-    strategyType: "SCORE_ROTATION_V1",
-    strategyName: "分數輪動策略",
-    riskLevel: "中高",
-    bestFor: "想用盤後技術分數挑隔日強勢候選",
-    description: "以總分、趨勢、動能與風險分數做輪動篩選，避免只看單一指標。",
-    buySummary: "總分與風險分數達標，趨勢或突破至少一項強，且收盤站上短均線。",
-    sellSummary: "分數轉弱、跌破 MA20、MACD 轉空，或觸發停損停利。"
+    strategyType: "BUY_HOLD_BASELINE_V1",
+    strategyName: "買進持有基準",
+    riskLevel: "基準",
+    bestFor: "判斷策略是否真的勝過同期間持有標的",
+    description: "在第一個可交易訊號後買進並持有至區間結束。",
+    buySummary: "第一個可交易訊號後次日開盤買進。",
+    sellSummary: "回測區間結束時賣出。"
   },
   {
-    strategyType: "EARLY_TURNAROUND_V1",
-    strategyName: "早期轉強策略",
-    riskLevel: "中等",
-    bestFor: "回檔後剛轉強、還沒明顯追高的標的",
-    description: "用 KD、MACD、布林位置與 RSI 捕捉偏早的轉強訊號。",
-    buySummary: "RSI 由低檔回升區、KD 偏多、MACD 不再惡化，且風險分數可接受。",
-    sellSummary: "轉強失敗、跌破 MA20 或風險分數惡化即退出。"
-  },
-  {
-    strategyType: "MOMENTUM_CONTINUATION_V1",
-    strategyName: "動能續強策略",
-    riskLevel: "高",
-    bestFor: "主升段或產業輪動明顯時的強勢股",
-    description: "用 MA 結構、MACD、量比、突破分數與 ADX 篩選續強標的。",
-    buySummary: "MA20 高於 MA60，價格站上 MA20，MACD 與量能確認動能延續。",
-    sellSummary: "跌破短均線且動能降溫，或高檔過熱後轉弱。"
-  },
-  {
-    strategyType: "ETF_STABLE_SWING_V1",
-    strategyName: "ETF 穩定波段策略",
-    riskLevel: "低",
-    bestFor: "ETF、大型權值股與低波動配置",
-    description: "偏重低 ATR、MA 結構、風險分數與不過熱的布林位置。",
-    buySummary: "低波動、MA20 高於 MA60，價格站上 MA20，RSI 與布林位置不過熱。",
-    sellSummary: "跌破 MA60、風險轉弱，或達到較保守的獲利保護。"
+    strategyType: "CASH_WAIT_BASELINE_V1",
+    strategyName: "現金觀望基準",
+    riskLevel: "最低",
+    bestFor: "判斷這段期間空手是否勝過進場策略",
+    description: "回測比較用基準模型，不買進任何標的，報酬固定接近 0%。",
+    buySummary: "永不買進，用來衡量市場是否不值得交易。",
+    sellSummary: "無持倉。"
   }
 ];
 let strategyModels = STRATEGY_MODELS_FALLBACK.slice();
-const STRATEGY_CHART_COLORS = ["#38bdf8", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa", "#14b8a6", "#fb7185", "#84cc16", "#eab308"];
+const STRATEGY_CHART_COLORS = ["#38bdf8", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa", "#14b8a6", "#fb7185", "#84cc16", "#eab308", "#94a3b8", "#22d3ee", "#cbd5e1"];
 const analysisMemoryCache = new Map();
 const analysisRequests = new Map();
 const ANALYSIS_LINE_OPTIONS = [
@@ -394,7 +376,7 @@ function clearCache(key) {
 }
 
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v10.14" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v10.19" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -514,43 +496,62 @@ async function onSubmitWatchlist(event) {
   const formData = new FormData(form);
   const payload = Object.fromEntries(formData.entries());
   payload.backfill = formData.has("backfill") ? "true" : "false";
-  payload.symbol = normalizeSymbolInput(payload.symbol);
+  payload.symbol = normalizeSymbolListInput(payload.symbol);
 
   const message = document.getElementById("watchFormMessage");
-  const symbol = payload.symbol;
-  if (!symbol) {
+  const submitButton = form.querySelector('button[type="submit"]');
+  const symbols = payload.symbol.split(",").filter(Boolean);
+  if (!symbols.length) {
     message.textContent = "請輸入股票代號";
     return;
   }
 
-  upsertCachedWatchlistItem({
-    symbol,
-    name: "",
-    trendText: "同步中",
-    signalSummary: "後端查詢股票名稱中",
-    pending: true
+  const cached = getCachedDashboard() || { watchlist: [] };
+  const existing = new Set((cached.watchlist || []).map(item => normalizeSymbolInput(item.symbol)));
+  const optimisticSymbols = symbols.filter(symbol => !existing.has(symbol));
+  optimisticSymbols.forEach(symbol => {
+    upsertCachedWatchlistItem({
+      symbol,
+      name: "",
+      trendText: "同步中",
+      signalSummary: "後端查詢股票名稱中",
+      pending: true
+    });
   });
-  message.textContent = "已先加入畫面，正在同步...";
+  message.textContent = `正在同步 ${symbols.length} 檔股票...`;
+  if (submitButton) submitButton.disabled = true;
 
   try {
     const result = await Api.addWatchlist(payload);
     if (payload.backfill === "true") analysisMemoryCache.clear();
-    const stock = result.stock || {};
-    replaceCachedWatchlistItem(symbol, {
-      symbol: stock.symbol || symbol,
-      name: stock.name || "",
-      trendText: "觀察",
-      signalSummary: ""
+    (result.stocks || []).forEach(stock => {
+      replaceCachedWatchlistItem(stock.symbol, {
+        symbol: stock.symbol,
+        name: stock.name || "",
+        trendText: "觀察",
+        signalSummary: ""
+      });
     });
-    message.textContent = result.warning
+    let resultMessage = result.warning
       ? `${result.message || "已加入關注股票"}：${result.warning}`
       : (result.message || "已加入關注股票");
+    if ((result.skipped || []).length) {
+      const preview = result.skipped.slice(0, 8).join(", ");
+      resultMessage += `（重複：${preview}${result.skipped.length > 8 ? "..." : ""}）`;
+    }
+    if ((result.failed || []).length) {
+      const preview = result.failed.slice(0, 5).map(item => item.symbol).join(", ");
+      resultMessage += `（失敗：${preview}${result.failed.length > 5 ? "..." : ""}）`;
+    }
+    message.textContent = resultMessage;
     form.reset();
     form.querySelector("input[name='backfill']").checked = false;
     await loadDashboard();
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
-    removeCachedWatchlistItem(symbol);
+    optimisticSymbols.forEach(removeCachedWatchlistItem);
+  } finally {
+    if (submitButton) submitButton.disabled = false;
   }
 }
 
@@ -755,9 +756,9 @@ function renderStrategyModelSelectors() {
   ["paperStrategyType"].forEach(id => {
     const select = document.getElementById(id);
     if (!select) return;
-    const current = select.value || "MULTI_FACTOR_BALANCED_V1";
+    const current = select.value || "PERSISTENT_MOMENTUM_V2";
     select.innerHTML = strategyModels.map(model => `<option value="${escapeHtml(model.strategyType)}">${escapeHtml(model.strategyName)}</option>`).join("");
-    select.value = strategyModels.some(model => model.strategyType === current) ? current : "MULTI_FACTOR_BALANCED_V1";
+    select.value = strategyModels.some(model => model.strategyType === current) ? current : "PERSISTENT_MOMENTUM_V2";
   });
   updateStrategyModelInfo("paperStrategyType", "paperStrategyInfo");
   renderCandidateStrategyOverview();
@@ -777,7 +778,7 @@ function renderBacktestStrategyOptions() {
   const target = document.getElementById("backtestStrategyOptions");
   if (!target) return;
   const existing = Array.from(target.querySelectorAll("input:checked")).map(input => input.value);
-  const checked = new Set(existing.length ? existing : ["MULTI_FACTOR_BALANCED_V1"]);
+  const checked = new Set(existing.length ? existing : ["PERSISTENT_MOMENTUM_V2"]);
   target.innerHTML = strategyModels.map(model => `
     <label class="strategy-check">
       <input type="checkbox" value="${escapeHtml(model.strategyType)}" ${checked.has(model.strategyType) ? "checked" : ""} />
@@ -935,6 +936,7 @@ function renderBacktestComparisonRows(topHistoricalStrategyType) {
       <td data-label="總損益" class="${Number(result.totalPnl) >= 0 ? "up" : "down"}">${money(result.totalPnl)}</td>
       <td data-label="交易次數">${number(result.tradeCount)}</td>
       <td data-label="勝率">${number(result.winRate)}%</td>
+      <td data-label="平均持有日">${number(result.avgHoldingDays)}</td>
       <td data-label="最大回撤" class="down">${number(result.maxDrawdown)}%</td>
       <td data-label="Profit Factor">${number(calculateBacktestProfitFactor(result.trades || []))}</td>
       <td data-label="明細"><button type="button" data-view-backtest="${escapeHtml(result.strategyType)}">${active ? "顯示中" : "查看"}</button></td>
@@ -966,7 +968,7 @@ function renderBacktest(data, drawChart = true) {
     strategyCaption.hidden = false;
     strategyCaption.textContent = `${data.strategyName || "策略模型"} · ${data.startDate || ""} 至 ${data.endDate || ""}${data.strategyDescription ? " · " + data.strategyDescription : ""}`;
   }
-  document.getElementById("backtestSummary").innerHTML = [summaryCard("總報酬率", number(data.totalReturn) + "%", Number(data.totalReturn)>=0?"up":"down"), summaryCard("總損益", money(data.totalPnl), Number(data.totalPnl)>=0?"up":"down"), summaryCard("交易次數", number(data.tradeCount), ""), summaryCard("勝率", number(data.winRate) + "%", ""), summaryCard("平均獲利", money(data.avgProfit), "up"), summaryCard("平均虧損", money(data.avgLoss), "down"), summaryCard("最大回撤", number(data.maxDrawdown) + "%", "down")].join("");
+  document.getElementById("backtestSummary").innerHTML = [summaryCard("總報酬率", number(data.totalReturn) + "%", Number(data.totalReturn)>=0?"up":"down"), summaryCard("總損益", money(data.totalPnl), Number(data.totalPnl)>=0?"up":"down"), summaryCard("交易次數", number(data.tradeCount), ""), summaryCard("勝率", number(data.winRate) + "%", ""), summaryCard("平均持有日", number(data.avgHoldingDays), ""), summaryCard("平均獲利", money(data.avgProfit), "up"), summaryCard("平均虧損", money(data.avgLoss), "down"), summaryCard("最大回撤", number(data.maxDrawdown) + "%", "down")].join("");
   renderBacktestDiagnostics(data);
   if (drawChart) drawBacktestChart(data.equityCurve || [], data.strategyName || "策略模型");
   document.getElementById("backtestSymbolsBody").innerHTML = (data.bySymbol || []).map(x => `<tr><td data-label="股票">${escapeHtml(x.symbol)}</td><td data-label="交易次數">${number(x.totalTrades)}</td><td data-label="勝率">${number(x.winRate)}%</td><td data-label="累計報酬">${number(x.totalReturn)}%</td><td data-label="平均報酬">${number(x.avgReturn)}%</td><td data-label="Profit Factor">${number(x.profitFactor)}</td></tr>`).join("");
@@ -1636,7 +1638,7 @@ function normalizeSymbolInput(value) {
 
 function normalizeSymbolListInput(value) {
   return String(value ?? "")
-    .split(/[\s,，、]+/)
+    .split(/[\s,，、;；]+/)
     .map(normalizeSymbolInput)
     .filter(Boolean)
     .join(",");

@@ -8,14 +8,14 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=10.14" />
+  <link rel="stylesheet" href="css/style.css?v=10.19" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v10.14</div>
+        <div class="app-version" id="appVersion">前端 v10.19</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
@@ -56,7 +56,7 @@
           </div>
 
           <form id="watchlistForm" class="watch-form hidden">
-            <label class="full">股票代號<input id="watchSymbol" name="symbol" type="text" inputmode="numeric" required placeholder="2330" autocomplete="off" /></label>
+            <label class="full">股票代號<input id="watchSymbol" name="symbol" type="text" inputmode="text" required placeholder="2330, 006208, 0050" autocomplete="off" /></label>
             <label class="full">備註<input name="note" type="text" placeholder="ETF 長期觀察" /></label>
             <label>目標價<input name="target_price" type="number" step="0.0001" placeholder="250" /></label>
             <label>提醒價<input name="alert_price" type="number" step="0.0001" placeholder="230" /></label>
@@ -179,18 +179,16 @@
         <form id="paperStrategyForm" class="panel form-grid">
           <label>策略模型
             <select id="paperStrategyType" name="strategyType">
-              <option value="MULTI_FACTOR_BALANCED_V1">多指標平衡波段策略</option>
-              <option value="TREND_FOLLOWING_V1">趨勢順勢策略</option>
-              <option value="VOLUME_BREAKOUT_V1">量價突破策略</option>
-              <option value="BULL_PULLBACK_V1">多頭回檔策略</option>
-              <option value="LOW_VOLATILITY_V1">低波動防守策略</option>
-              <option value="SCORE_ROTATION_V1">分數輪動策略</option>
-              <option value="EARLY_TURNAROUND_V1">早期轉強策略</option>
-              <option value="MOMENTUM_CONTINUATION_V1">動能續強策略</option>
-              <option value="ETF_STABLE_SWING_V1">ETF 穩定波段策略</option>
+              <option value="PERSISTENT_MOMENTUM_V2">持續動能波段策略</option>
+              <option value="TREND_PULLBACK_V2">多頭回檔確認策略</option>
+              <option value="CONFIRMED_BREAKOUT_V2">確認突破短波段策略</option>
+              <option value="OVERSOLD_REBOUND_V2">多頭超賣反彈策略</option>
+              <option value="ETF_TREND_V2">ETF 月線趨勢策略</option>
+              <option value="BUY_HOLD_BASELINE_V1">買進持有基準</option>
+              <option value="CASH_WAIT_BASELINE_V1">現金觀望基準</option>
             </select>
           </label>
-          <label>策略名稱<input name="name" value="多指標平衡波段策略" required /></label>
+          <label>策略名稱<input name="name" value="持續動能波段策略" required /></label>
           <label>股票代號<input name="symbols" placeholder="2330,0050,006208" required /></label>
           <label>初始資金<input name="initialCash" type="number" min="1" value="300000" required /></label>
           <label class="check-label"><input name="enabled" type="checkbox" checked />啟用每日虛擬交易</label>
@@ -204,7 +202,7 @@
       </section>
 
       <section id="backtestPage" class="page">
-        <div class="notice-band">可複選策略模型，以相同股票、日期與資金比較績效。回測結果不代表未來績效，也不會產生真實交易。</div>
+        <div class="notice-band">盤後訊號統一於下一交易日開盤模擬成交。可複選模型並和買進持有、現金觀望基準比較；短期間交易筆數少時，勝率不具代表性。</div>
         <form id="backtestForm" class="panel form-grid">
           <label class="full">股票代號，最多 10 檔<input name="symbols" placeholder="2330,0050,006208" required /></label>
           <fieldset class="strategy-model-picker full">
@@ -224,7 +222,7 @@
         <div id="backtestDiagnostics" class="notice-band diagnostic-band" hidden></div>
         <div id="backtestComparisonPanel" class="panel" hidden>
           <div class="panel-header"><div><h2>模型績效比較</h2><div class="muted">最高報酬只代表此回測區間，不代表下一次仍會勝出</div></div></div>
-          <div class="table-wrap"><table><thead><tr><th>模型</th><th>總報酬率</th><th>總損益</th><th>交易次數</th><th>勝率</th><th>最大回撤</th><th>Profit Factor</th><th>明細</th></tr></thead><tbody id="backtestComparisonBody"></tbody></table></div>
+          <div class="table-wrap"><table><thead><tr><th>模型</th><th>總報酬率</th><th>總損益</th><th>交易次數</th><th>勝率</th><th>平均持有日</th><th>最大回撤</th><th>Profit Factor</th><th>明細</th></tr></thead><tbody id="backtestComparisonBody"></tbody></table></div>
         </div>
         <div id="backtestResultStrategy" class="result-caption" hidden></div>
         <div id="backtestSummary" class="grid-4"></div>
@@ -360,8 +358,8 @@
     </main>
   </div>
 
-  <script src="js/config.js?v=10.14"></script>
-  <script src="js/api.js?v=10.14"></script>
-  <script src="js/app.js?v=10.14"></script>
+  <script src="js/config.js?v=10.19"></script>
+  <script src="js/api.js?v=10.19"></script>
+  <script src="js/app.js?v=10.19"></script>
 </body>
 </html>
