@@ -8,19 +8,25 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=10.19" />
+  <link rel="stylesheet" href="css/style.css?v=11.0" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v10.19</div>
+        <div class="app-version" id="appVersion">前端 v11.0</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="dashboard">首頁總覽</button>
         <button class="nav-btn" data-page="candidates">候選清單</button>
+        <button class="nav-btn" data-page="leaderboard">候選排行</button>
+        <button class="nav-btn" data-page="market">市場總覽</button>
+        <button class="nav-btn" data-page="strategyHealth">策略健康</button>
+        <button class="nav-btn" data-page="notifications">通知中心</button>
+        <button class="nav-btn" data-page="stats">統計中心</button>
+        <button class="nav-btn" data-page="stockDetail">股票詳情</button>
         <button class="nav-btn" data-page="paper">虛擬交易</button>
         <button class="nav-btn" data-page="backtest">策略回測</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
@@ -172,6 +178,46 @@
         </div>
       </section>
 
+      <section id="leaderboardPage" class="page">
+        <div id="leaderboardSummary" class="grid-4"></div>
+        <div class="panel">
+          <div class="panel-header"><div><h2>候選排行</h2><div class="muted">買進與賣出候選依信心分數、風險與模型命中排序。</div></div></div>
+          <div id="leaderboardBody" class="v11-grid"></div>
+        </div>
+      </section>
+
+      <section id="marketPage" class="page">
+        <div id="marketSummaryCards" class="grid-4"></div>
+        <div class="panel"><h2>市場摘要</h2><div id="marketSummaryBody" class="v11-list"></div></div>
+      </section>
+
+      <section id="strategyHealthPage" class="page">
+        <div id="strategyHealthCards" class="grid-4"></div>
+        <div class="panel"><h2>策略健康</h2><div id="strategyHealthBody" class="v11-grid"></div></div>
+        <div class="panel"><h2>策略研究</h2><div id="strategyResearchBody" class="v11-grid"></div></div>
+      </section>
+
+      <section id="notificationsPage" class="page">
+        <div class="panel">
+          <div class="panel-header"><div><h2>通知中心</h2><div class="muted">候選、風險、資料更新與策略健康提醒。</div></div><button id="btnClearNotifications" type="button">清除通知</button></div>
+          <div id="notificationsBody" class="v11-list"></div>
+        </div>
+      </section>
+
+      <section id="statsPage" class="page">
+        <div id="statsCards" class="grid-4"></div>
+        <div class="panel"><h2>系統統計</h2><div id="statsBody" class="v11-grid"></div></div>
+      </section>
+
+      <section id="stockDetailPage" class="page">
+        <div class="panel">
+          <div class="panel-header">
+            <div><h2 id="stockDetailTitle">股票詳情</h2><div class="muted">輸入台股代號查看技術、候選理由與持倉摘要。</div></div>
+            <div class="inline-form"><input id="stockDetailSymbol" type="text" inputmode="numeric" placeholder="2330 或 006208" /><button id="btnLoadStockDetail" type="button">查詢</button></div>
+          </div>
+          <div id="stockDetailBody" class="v11-list"></div>
+        </div>
+      </section>
       <section id="paperPage" class="page">
         <div class="notice-band">
           可選擇不同技術指標模型進行每日虛擬買賣。策略只做模擬，不會產生真實交易，也不代表未來績效。
@@ -358,8 +404,8 @@
     </main>
   </div>
 
-  <script src="js/config.js?v=10.19"></script>
-  <script src="js/api.js?v=10.19"></script>
-  <script src="js/app.js?v=10.19"></script>
+  <script src="js/config.js?v=11.0"></script>
+  <script src="js/api.js?v=11.0"></script>
+  <script src="js/app.js?v=11.0"></script>
 </body>
 </html>

@@ -1685,3 +1685,282 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+/* StockLab v11 extension: lazy pages, request-friendly renderers, and compact mobile UI. */
+const v11PageDataCache = {
+  candidateLeaderboard: null,
+  marketSummary: null,
+  strategyResearch: null,
+  strategyHealth: null,
+  stats: null,
+  notifications: null,
+  stockDetail: {}
+};
+
+Object.assign(pages, {
+  leaderboard: { title: "候選排行", subtitle: "買進與賣出候選依信心、風險與模型命中排序", loader: loadCandidateLeaderboard },
+  market: { title: "市場總覽", subtitle: "大盤、廣度、關注清單與風險模式", loader: loadMarketSummary },
+  strategyHealth: { title: "策略健康", subtitle: "用近期回測與虛擬交易觀察模型穩定度", loader: loadStrategyHealthPage },
+  notifications: { title: "通知中心", subtitle: "候選、風險、策略與資料更新提醒", loader: loadNotifications },
+  stats: { title: "統計中心", subtitle: "資料列、交易、策略與候選摘要", loader: loadStats },
+  stockDetail: { title: "股票詳情", subtitle: "單一股票的技術、候選與持倉摘要", loader: loadStockDetailFromInput }
+});
+
+window.addEventListener("DOMContentLoaded", () => {
+  const detailButton = document.getElementById("btnLoadStockDetail");
+  if (detailButton) detailButton.addEventListener("click", loadStockDetailFromInput);
+  const detailInput = document.getElementById("stockDetailSymbol");
+  if (detailInput) detailInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") loadStockDetailFromInput();
+  });
+  const clearButton = document.getElementById("btnClearNotifications");
+  if (clearButton) clearButton.addEventListener("click", clearV11Notifications);
+});
+
+async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder) {
+  const cached = v11PageDataCache[cacheKey];
+  if (cached) renderFn(cached, { stale: true });
+  else renderV11Loading(cacheKey);
+
+  try {
+    const data = await fetcher();
+    v11PageDataCache[cacheKey] = data;
+    renderFn(data, { stale: false });
+    setApiStatus("v11 資料已更新");
+  } catch (err) {
+    if (cached) {
+      setApiStatus("v11 API 暫時失敗，已顯示快取：" + err.message);
+      return;
+    }
+    const fallback = typeof fallbackBuilder === "function" ? fallbackBuilder(err) : { ok: false, message: err.message };
+    renderFn(fallback, { stale: false, error: err });
+    setApiStatus("v11 API 尚未可用：" + err.message);
+  }
+}
+
+function renderV11Loading(cacheKey) {
+  const map = {
+    candidateLeaderboard: "leaderboardBody",
+    marketSummary: "marketSummaryBody",
+    strategyResearch: "strategyResearchBody",
+    strategyHealth: "strategyHealthBody",
+    stats: "statsBody",
+    notifications: "notificationsBody"
+  };
+  const target = document.getElementById(map[cacheKey]);
+  if (target) target.innerHTML = Array.from({ length: 3 }).map(() => '<div class="v11-card skeleton-card"></div>').join("");
+}
+
+function loadCandidateLeaderboard() {
+  return loadV11PageWithCache(
+    "candidateLeaderboard",
+    () => Api.getCandidateLeaderboard ? Api.getCandidateLeaderboard() : Api.getCandidates(),
+    renderCandidateLeaderboard,
+    () => buildLeaderboardFallback(currentCandidateData)
+  );
+}
+
+function buildLeaderboardFallback(source) {
+  const buy = (source && source.buyCandidates) || [];
+  const sell = (source && source.sellCandidates) || [];
+  return { ok: true, dataDate: source && source.dataDate, items: buy.map(x => Object.assign({ candidateType: "BUY" }, x)).concat(sell.map(x => Object.assign({ candidateType: "SELL" }, x))) };
+}
+
+function renderCandidateLeaderboard(data) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  const ranked = items.slice().sort((a, b) => Number(b.confidenceScore || b.buyScore || b.sellScore || b.totalScore || 0) - Number(a.confidenceScore || a.buyScore || a.sellScore || a.totalScore || 0));
+  document.getElementById("leaderboardSummary").innerHTML = [
+    summaryCard("買進候選", ranked.filter(x => String(x.candidateType).toUpperCase() === "BUY").length, ""),
+    summaryCard("賣出候選", ranked.filter(x => String(x.candidateType).toUpperCase() === "SELL").length, ""),
+    summaryCard("資料日期", escapeHtml(data.dataDate || "-"), ""),
+    summaryCard("更新時間", escapeHtml(data.updatedAt || "-"), "")
+  ].join("");
+  document.getElementById("leaderboardBody").innerHTML = ranked.slice(0, 30).map((item, index) => renderV11CandidateCard(item, index + 1)).join("") || renderV11Empty("目前沒有候選排行資料");
+}
+
+function renderV11CandidateCard(item, rank) {
+  const type = String(item.candidateType || "BUY").toUpperCase();
+  const score = Number(item.confidenceScore || item.buyScore || item.sellScore || item.totalScore || 0);
+  const reasons = normalizeTextList(item.reasonList || item.reason || item.actionSuggestion).slice(0, 3);
+  const risks = normalizeTextList(item.riskList).slice(0, 2);
+  return `<article class="v11-card">
+    <div class="v11-card-head"><strong>${rank}. ${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</strong><span class="pill ${type === "SELL" ? "danger" : ""}">${type === "SELL" ? "賣出" : "買進"}</span></div>
+    <div class="v11-score"><span>${number(score)}</span><small>${escapeHtml(item.gradeText || scoreToGradeText(score))}</small></div>
+    <div class="matched-models">${renderModelTags(item.matchedModelNames || item.matchedModels || item.strategyName, 2)}</div>
+    <div class="v11-meta">收盤 ${number(item.close)} · RSI ${number(item.rsi14)} · 風險 ${number(item.riskScore)}</div>
+    ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+    ${risks.length ? `<div class="v11-risk">${risks.map(escapeHtml).join(" · ")}</div>` : ""}
+  </article>`;
+}
+
+function loadMarketSummary() {
+  return loadV11PageWithCache("marketSummary", () => Api.getMarketSummary(), renderMarketSummary, () => ({ ok: false, summaryText: "等待後端 v11 marketSummary 部署" }));
+}
+
+function renderMarketSummary(data) {
+  const taiex = data.taiex || {};
+  const breadth = data.breadth || {};
+  const watch = data.watchlistMarket || {};
+  document.getElementById("marketSummaryCards").innerHTML = [
+    summaryCard("TAIEX", number(taiex.close), Number(taiex.change) >= 0 ? "up" : "down"),
+    summaryCard("大盤模式", escapeHtml(data.marketMode || taiex.trendText || "-"), ""),
+    summaryCard("上漲比率", number(breadth.upRatio) + "%", Number(breadth.upRatio) >= 50 ? "up" : "down"),
+    summaryCard("關注均分", number(watch.avgScore), "")
+  ].join("");
+  document.getElementById("marketSummaryBody").innerHTML = `
+    <div class="v11-card"><strong>${escapeHtml(data.summaryText || "尚無市場摘要")}</strong><p>${escapeHtml(data.riskText || "")}</p></div>
+    <div class="v11-grid compact">
+      ${renderKeyValueCard("TAIEX MA20 / MA60", `${number(taiex.ma20)} / ${number(taiex.ma60)}`)}
+      ${renderKeyValueCard("強勢 / 弱勢", `${number(breadth.strongCount)} / ${number(breadth.weakCount)}`)}
+      ${renderKeyValueCard("過熱 / 超跌", `${number(breadth.overheatCount)} / ${number(breadth.oversoldCount)}`)}
+      ${renderKeyValueCard("Risk On", data.marketRiskOn ? "是" : "否")}
+    </div>`;
+}
+
+function loadStrategyHealthPage() {
+  loadV11PageWithCache("strategyHealth", () => Api.getStrategyHealth(), renderStrategyHealth, () => ({ ok: false, models: [] }));
+  loadV11PageWithCache("strategyResearch", () => Api.getStrategyResearch(), renderStrategyResearch, () => ({ ok: false, items: [] }));
+}
+
+function renderStrategyHealth(data) {
+  const models = Array.isArray(data.models) ? data.models : [];
+  const avg = models.length ? models.reduce((sum, x) => sum + Number(x.healthScore || 0), 0) / models.length : 0;
+  document.getElementById("strategyHealthCards").innerHTML = [
+    summaryCard("模型數", models.length, ""),
+    summaryCard("平均健康分", number(avg), avg >= 70 ? "up" : "warn"),
+    summaryCard("警示模型", models.filter(x => (x.warningList || []).length).length, "down"),
+    summaryCard("資料日期", escapeHtml(data.dataDate || "-"), "")
+  ].join("");
+  document.getElementById("strategyHealthBody").innerHTML = models.map(model => `<article class="v11-card">
+    <div class="v11-card-head"><strong>${escapeHtml(model.strategyName || model.strategyType)}</strong><span class="pill">${number(model.healthScore)}</span></div>
+    <div class="v11-meta">30日勝率 ${number(model.winRate30)}% · 90日 PF ${number(model.profitFactor90)} · 最大回撤 ${number(model.maxDrawdown90)}%</div>
+    <div>${escapeHtml(model.healthText || "")}</div>
+    ${normalizeTextList(model.warningList).length ? `<ul class="v11-reasons">${normalizeTextList(model.warningList).map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}
+  </article>`).join("") || renderV11Empty("尚無策略健康資料");
+}
+
+function renderStrategyResearch(data) {
+  const items = Array.isArray(data.items) ? data.items : Array.isArray(data.models) ? data.models : [];
+  document.getElementById("strategyResearchBody").innerHTML = items.map(item => `<article class="v11-card">
+    <div class="v11-card-head"><strong>${escapeHtml(item.strategyName || item.strategyType || "策略")}</strong><span class="pill">PF ${number(item.profitFactor)}</span></div>
+    <div class="v11-meta">交易 ${number(item.tradeCount)} · 勝率 ${number(item.winRate)}% · 平均持有 ${number(item.avgHoldingDays)} 日</div>
+    <div>${escapeHtml(item.summaryText || item.description || "")}</div>
+  </article>`).join("") || renderV11Empty("尚無策略研究資料");
+}
+
+function loadNotifications() {
+  return loadV11PageWithCache("notifications", () => Api.getNotifications({ limit: 100 }), renderNotifications, () => ({ ok: false, items: [] }));
+}
+
+function renderNotifications(data) {
+  const items = Array.isArray(data.items) ? data.items : [];
+  document.getElementById("notificationsBody").innerHTML = items.slice(0, 50).map(item => `<article class="notification-card ${String(item.level || "info").toLowerCase()}">
+    <div class="v11-card-head"><strong>${escapeHtml(item.title || item.type || "通知")}</strong><span>${escapeHtml(item.date || item.createdAt || "")}</span></div>
+    <div class="notification-message">${escapeHtml(item.message || "")}</div>
+    <div class="v11-meta">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")} · ${escapeHtml(item.source || "StockLab")}</div>
+  </article>`).join("") || renderV11Empty("目前沒有通知");
+}
+
+async function clearV11Notifications() {
+  if (!Api.clearNotifications) return;
+  await Api.clearNotifications();
+  v11PageDataCache.notifications = null;
+  await loadNotifications();
+}
+
+function loadStats() {
+  return loadV11PageWithCache("stats", () => Api.getStats(), renderStats, () => ({ ok: false }));
+}
+
+function renderStats(data) {
+  document.getElementById("statsCards").innerHTML = [
+    summaryCard("關注股票", number(data.watchlistCount), ""),
+    summaryCard("庫存股票", number(data.portfolioCount), ""),
+    summaryCard("交易紀錄", number(data.transactionCount), ""),
+    summaryCard("價格資料", number(data.priceRows), "")
+  ].join("");
+  const fields = ["indicatorRows", "backtestRunCount", "paperStrategyCount", "paperTradeCount", "candidateBuyCount", "candidateSellCount", "avgWinRate", "avgProfitFactor", "avgHoldingDays", "lastDataDate", "lastUpdateAt"];
+  document.getElementById("statsBody").innerHTML = fields.map(key => renderKeyValueCard(key, data[key])).join("");
+}
+
+function loadStockDetailFromInput() {
+  const input = document.getElementById("stockDetailSymbol");
+  const symbol = normalizeSymbolInput(input && input.value);
+  if (!symbol) {
+    const body = document.getElementById("stockDetailBody");
+    if (body) body.innerHTML = renderV11Empty("請輸入股票代號");
+    return;
+  }
+  return loadStockDetail(symbol);
+}
+
+async function loadStockDetail(symbol) {
+  symbol = normalizeSymbolInput(symbol);
+  const cached = v11PageDataCache.stockDetail[symbol];
+  if (cached) renderStockDetail(cached);
+  try {
+    const data = Api.getStockDetail ? await Api.getStockDetail(symbol) : await Api.getAnalysis(symbol);
+    v11PageDataCache.stockDetail[symbol] = data;
+    renderStockDetail(data);
+  } catch (err) {
+    try {
+      const fallback = await Api.getAnalysis(symbol);
+      v11PageDataCache.stockDetail[symbol] = fallback;
+      renderStockDetail(fallback);
+    } catch (fallbackErr) {
+      renderStockDetail({ ok: false, symbol, message: fallbackErr.message });
+    }
+  }
+}
+
+function renderStockDetail(data) {
+  const latest = data.latest || data.indicator || {};
+  const candidate = data.candidate || {};
+  const portfolio = data.portfolio || {};
+  document.getElementById("stockDetailTitle").textContent = `${data.symbol || ""} ${data.name || ""} 股票詳情`;
+  document.getElementById("stockDetailBody").innerHTML = `
+    <div class="v11-grid compact">
+      ${renderKeyValueCard("收盤價", latest.close || data.close)}
+      ${renderKeyValueCard("RSI14", latest.rsi14)}
+      ${renderKeyValueCard("MACD Hist", latest.macdHist)}
+      ${renderKeyValueCard("ADX14", latest.adx14)}
+      ${renderKeyValueCard("OBV", latest.obv)}
+      ${renderKeyValueCard("MFI14", latest.mfi14)}
+      ${renderKeyValueCard("CCI20", latest.cci20)}
+      ${renderKeyValueCard("SuperTrend", latest.superTrendDirection || latest.superTrend)}
+    </div>
+    <div class="v11-card"><strong>規則分析</strong><p>${escapeHtml(data.analysisText || candidate.actionSuggestion || data.message || "尚無分析文字")}</p></div>
+    <div class="v11-card"><strong>持倉</strong><p>股數 ${number(portfolio.quantity)} · 平均成本 ${number(portfolio.avgCost)} · 未實現損益 ${money(portfolio.unrealizedPnl)}</p></div>`;
+}
+
+function renderModelTags(models, maxVisible = 2) {
+  const names = normalizeTextList(models).filter(Boolean);
+  if (!names.length) return '<span class="matched-model-tag">未命中模型</span>';
+  const visible = names.slice(0, maxVisible).map(name => `<span class="matched-model-tag">${escapeHtml(name)}</span>`);
+  const hidden = names.length - visible.length;
+  if (hidden > 0) visible.push(`<span class="matched-model-tag more">+${hidden}</span>`);
+  return visible.join("");
+}
+
+function normalizeTextList(value) {
+  if (Array.isArray(value)) {
+    return value.map(item => typeof item === "string" ? item : (item.strategyName || item.name || item.strategyType || "")).filter(Boolean);
+  }
+  return String(value || "").split(/[\n,、|]/).map(text => text.trim()).filter(Boolean);
+}
+
+function scoreToGradeText(score) {
+  if (score >= 90) return "強烈候選";
+  if (score >= 80) return "高品質";
+  if (score >= 70) return "可觀察";
+  if (score >= 60) return "普通";
+  return "風險偏高";
+}
+
+function renderKeyValueCard(label, value) {
+  return `<div class="v11-card key-value"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value === undefined || value === null || value === "" ? "-" : (typeof value === "number" ? number(value) : value))}</strong></div>`;
+}
+
+function renderV11Empty(message) {
+  return `<div class="v11-empty">${escapeHtml(message)}</div>`;
+}

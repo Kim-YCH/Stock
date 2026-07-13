@@ -1,30 +1,39 @@
 const Api = (() => {
+  const inflightRequests = new Map();
+
   function isConfigured() {
     return typeof API_BASE_URL !== "undefined" && Boolean(API_BASE_URL && API_BASE_URL.trim());
+  }
+
+  function requestKey(action, params) {
+    return action + ":" + JSON.stringify(params || {});
+  }
+
+  function getOnce(action, params = {}, options = {}) {
+    const key = requestKey(action, params);
+    if (!options.force && inflightRequests.has(key)) return inflightRequests.get(key);
+    const promise = jsonp(action, params).finally(() => inflightRequests.delete(key));
+    inflightRequests.set(key, promise);
+    return promise;
   }
 
   function jsonp(action, params = {}) {
     return new Promise((resolve, reject) => {
       if (!isConfigured()) {
-        reject(new Error("尚未設定 API_BASE_URL，無法取得真實資料"));
+        reject(new Error("尚未設定 API_BASE_URL，請先更新 js/config.js"));
         return;
       }
 
       const callbackName = "stock_cb_" + Date.now() + "_" + Math.floor(Math.random() * 100000);
       const url = new URL(API_BASE_URL);
-
       url.searchParams.set("action", action);
       url.searchParams.set("callback", callbackName);
 
       const token = typeof API_TOKEN === "undefined" ? "" : API_TOKEN;
-      if (token) {
-        url.searchParams.set("token", token);
-      }
+      if (token) url.searchParams.set("token", token);
 
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          url.searchParams.set(key, value);
-        }
+      Object.entries(params || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
       });
 
       const script = document.createElement("script");
@@ -36,9 +45,7 @@ const Api = (() => {
       function cleanup() {
         clearTimeout(timeout);
         delete window[callbackName];
-        if (script.parentNode) {
-          script.parentNode.removeChild(script);
-        }
+        if (script.parentNode) script.parentNode.removeChild(script);
       }
 
       window[callbackName] = (data) => {
@@ -46,7 +53,7 @@ const Api = (() => {
         if (data && data.ok === false) {
           const message = String(data.message || "API 回傳錯誤");
           if (message.includes("Unknown action")) {
-            reject(new Error("Apps Script 後端尚未部署新版，請更新 Web App 後再試。"));
+            reject(new Error("Apps Script 後端尚未支援此 action，請部署新版 Web App"));
             return;
           }
           reject(new Error(message));
@@ -67,24 +74,30 @@ const Api = (() => {
 
   return {
     isConfigured,
-    getBackendVersion: () => jsonp("version"),
-    getDashboard: () => jsonp("dashboard"),
-    getStrategyModels: () => jsonp("strategyModels"),
-    getCandidates: () => jsonp("candidates"),
-    getPaperSummary: () => jsonp("paperSummary"),
+    getBackendVersion: () => getOnce("version"),
+    getDashboard: () => getOnce("dashboard"),
+    getStrategyModels: () => getOnce("strategyModels"),
+    getCandidates: () => getOnce("candidates"),
+    getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
+    getMarketSummary: () => getOnce("marketSummary"),
+    getStrategyResearch: () => getOnce("strategyResearch"),
+    getStrategyHealth: () => getOnce("strategyHealth"),
+    getStats: () => getOnce("stats"),
+    getNotifications: (params = {}) => getOnce("notifications", params),
+    markNotificationRead: (id) => jsonp("markNotificationRead", { id }),
+    clearNotifications: () => jsonp("clearNotifications"),
+    getStockDetail: (symbol) => getOnce("stockDetail", { symbol }),
+    getPaperSummary: () => getOnce("paperSummary"),
     createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
     togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),
     runPaperTrading: () => jsonp("runPaperTrading"),
     runBacktest: (data) => jsonp("runBacktest", data),
     runBacktestComparison: (data) => jsonp("runBacktestComparison", data),
-    getBacktestRuns: () => jsonp("backtestRuns"),
-    getBacktestResult: (runId) => jsonp("backtestResult", { runId }),
-    getPortfolio: () => jsonp("portfolio"),
-    getAnalysis: (symbol, force = false) => jsonp("analysis", {
-      symbol,
-      force: force ? "1" : undefined
-    }),
-    getTransactions: () => jsonp("transactions"),
+    getBacktestRuns: () => getOnce("backtestRuns"),
+    getBacktestResult: (runId) => getOnce("backtestResult", { runId }),
+    getPortfolio: () => getOnce("portfolio"),
+    getAnalysis: (symbol, force = false) => getOnce("analysis", { symbol, force: force ? "1" : undefined }, { force }),
+    getTransactions: (params = {}) => getOnce("transactions", Object.assign({ limit: 100 }, params)),
     lookupStock: (symbol) => jsonp("lookupStock", { symbol }),
     addWatchlist: (data) => jsonp("addWatchlist", data),
     removeWatchlist: (symbol, name = "") => jsonp("removeWatchlist", { symbol, name }),

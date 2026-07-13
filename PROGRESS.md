@@ -618,3 +618,38 @@ Changes:
 - 一次最多匯入 50 檔，輸入內重複與資料庫既有股票直接略過
 - 批次只讀寫關注清單一次，最後才重建候選與首頁快取
 - 完成訊息顯示新增、重複略過與失敗數量
+
+### v11.0 Candidate Ranking / Market Intelligence / Strategy Health
+
+完成：
+
+- 前端版本更新為 v11.0，GitHub Pages 資源版本同步更新。
+- 新增候選排行頁，支援 candidateLeaderboard API，並可用既有 candidates 資料 fallback。
+- 新增市場總覽頁，接入 marketSummary API。
+- 新增策略健康與策略研究頁，接入 strategyHealth / strategyResearch API。
+- 新增通知中心頁，接入 notifications / clearNotifications API。
+- 新增統計中心頁，接入 stats API。
+- 新增股票詳情頁，接入 stockDetail API，若後端尚未部署會 fallback 到 analysis。
+- js/api.js 新增 request 去重，避免同一 action + params 重複發送 API。
+- v11 新頁面新增 memory cache 與 stale-while-revalidate 呈現流程。
+- 新增候選模型標籤 renderModelTags，手機版會限制顯示寬度並保留 +N 摘要。
+- 新增 v11 Performance Pass CSS：防止橫向爆版、卡片 contain、skeleton loading、手機標籤橫向滑動。
+- app.gs 仍未加入 Git 追蹤，後端私密檔不會被提交到 GitHub。
+
+Known Issues：
+
+- candidateLeaderboard、marketSummary、strategyResearch、strategyHealth、stats、notifications、stockDetail 需要後端 Apps Script v11 action 完整部署後才會顯示正式資料。
+- 後端 app.gs 目前是本機 untracked 檔，依規則不納入 Git commit。
+- 現有部分舊頁中文字仍有歷史編碼亂碼，這次 v11 新頁面使用正常繁中標籤，但尚未全面重整舊文案。
+
+### v11.0 Performance Pass
+
+完成：
+
+- API 新增 inflight request map，同一 API 請求會共用 Promise。
+- v11 新頁面採用 pageDataCache，先顯示快取再背景更新。
+- 新增 loading skeleton 與 API error fallback，後端 action 尚未部署時不阻塞整站。
+- 交易紀錄 API 前端預設帶 limit=100。
+- 通知中心預設帶 limit=100。
+- 股票詳情以單一 symbol lazy load，避免進入頁面時抓全市場資料。
+- 手機版候選、通知、策略卡片新增 contain 與 overflow 控制，降低 DOM reflow 與橫向捲動問題。
