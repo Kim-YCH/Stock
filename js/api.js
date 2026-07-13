@@ -11,6 +11,7 @@ const Api = (() => {
 
   function getOnce(action, params = {}, options = {}) {
     const key = requestKey(action, params);
+    if (options.force) return jsonp(action, params);
     if (!options.force && inflightRequests.has(key)) return inflightRequests.get(key);
     const promise = jsonp(action, params).finally(() => inflightRequests.delete(key));
     inflightRequests.set(key, promise);
@@ -75,7 +76,7 @@ const Api = (() => {
   return {
     isConfigured,
     getBackendVersion: () => getOnce("version"),
-    getDashboard: () => getOnce("dashboard"),
+    getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getStrategyModels: () => getOnce("strategyModels"),
     getCandidates: () => getOnce("candidates"),
     getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
@@ -84,6 +85,7 @@ const Api = (() => {
     getStrategyHealth: () => getOnce("strategyHealth"),
     getStats: () => getOnce("stats"),
     getNotifications: (params = {}) => getOnce("notifications", params),
+    getNotificationSummary: () => getOnce("notificationSummary"),
     markNotificationRead: (id) => jsonp("markNotificationRead", { id }),
     clearNotifications: () => jsonp("clearNotifications"),
     getStockDetail: (symbol) => getOnce("stockDetail", { symbol }),
@@ -93,8 +95,8 @@ const Api = (() => {
     runPaperTrading: () => jsonp("runPaperTrading"),
     runBacktest: (data) => jsonp("runBacktest", data),
     runBacktestComparison: (data) => jsonp("runBacktestComparison", data),
-    getBacktestRuns: () => getOnce("backtestRuns"),
-    getBacktestResult: (runId) => getOnce("backtestResult", { runId }),
+    getBacktestRuns: (params = {}) => getOnce("backtestRuns", Object.assign({ limit: 20 }, params)),
+    getBacktestResult: (runId, tradesLimit = 100) => getOnce("backtestResult", { runId, tradesLimit }),
     getPortfolio: () => getOnce("portfolio"),
     getAnalysis: (symbol, force = false) => getOnce("analysis", { symbol, force: force ? "1" : undefined }, { force }),
     getTransactions: (params = {}) => getOnce("transactions", Object.assign({ limit: 100 }, params)),
@@ -104,6 +106,7 @@ const Api = (() => {
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
     calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),
+    runDailyDerivedCaches: () => jsonp("runDailyDerivedCaches"),
     addTransaction: (data) => jsonp("addTransaction", data),
     deleteTransaction: (id) => jsonp("deleteTransaction", { id })
   };

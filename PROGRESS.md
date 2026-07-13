@@ -623,33 +623,38 @@ Changes:
 
 完成：
 
-- 前端版本更新為 v11.0，GitHub Pages 資源版本同步更新。
-- 新增候選排行頁，支援 candidateLeaderboard API，並可用既有 candidates 資料 fallback。
-- 新增市場總覽頁，接入 marketSummary API。
-- 新增策略健康與策略研究頁，接入 strategyHealth / strategyResearch API。
-- 新增通知中心頁，接入 notifications / clearNotifications API。
-- 新增統計中心頁，接入 stats API。
-- 新增股票詳情頁，接入 stockDetail API，若後端尚未部署會 fallback 到 analysis。
-- js/api.js 新增 request 去重，避免同一 action + params 重複發送 API。
-- v11 新頁面新增 memory cache 與 stale-while-revalidate 呈現流程。
-- 新增候選模型標籤 renderModelTags，手機版會限制顯示寬度並保留 +N 摘要。
-- 新增 v11 Performance Pass CSS：防止橫向爆版、卡片 contain、skeleton loading、手機標籤橫向滑動。
-- app.gs 仍未加入 Git 追蹤，後端私密檔不會被提交到 GitHub。
+- 前後端版本同步更新為 v11.0。
+- 完整實作 candidateLeaderboard：分組排名、信心分數、星等、詳細 reasonList、riskList 與操作建議。
+- 完整實作 marketSummary：TAIEX 均線、市場模式、關注股廣度、風險與產業代理分數。
+- 完整實作 strategyResearch 與 strategyHealth，彙整回測、虛擬交易、30 / 90 / 180 天狀態與失效警告。
+- 新增 Notifications Sheet、通知產生、未讀數、標記已讀、清除通知與分頁 API。
+- 新增 stats 快取，提供資料列、交易、策略與候選統計。
+- 新增 stockDetail API 與完整股票詳細頁，包含技術、候選、持倉、訊號、交易、回測及規則分析。
+- Indicators 新增 EMA、VWAP20、OBV、MFI、CCI、Williams %R、ROC、SuperTrend、Donchian Channel。
+- 每日更新改為核心行情與衍生快取分離，單一衍生功能失敗不影響行情更新。
+- 前端新增獨立策略研究頁、通知未讀、股票連結、回測明細延遲載入與手機更多選單。
+- app.gs 維持本機 untracked 私有檔，不納入 Git commit。
 
 Known Issues：
 
-- candidateLeaderboard、marketSummary、strategyResearch、strategyHealth、stats、notifications、stockDetail 需要後端 Apps Script v11 action 完整部署後才會顯示正式資料。
-- 後端 app.gs 目前是本機 untracked 檔，依規則不納入 Git commit。
-- 現有部分舊頁中文字仍有歷史編碼亂碼，這次 v11 新頁面使用正常繁中標籤，但尚未全面重整舊文案。
+- Apps Script v11 後端需由擁有者重新部署 Web App，正式站才會使用新增 actions 與 Indicators 欄位。
+- LINE 通知尚未串接，本版先完成站內通知。
+- 若歷史資料不足，長週期指標與候選理由會自動略過，不會用假資料補值。
+- 公司基本資料與財報資料保留至後續版本。
 
 ### v11.0 Performance Pass
 
 完成：
 
-- API 新增 inflight request map，同一 API 請求會共用 Promise。
-- v11 新頁面採用 pageDataCache，先顯示快取再背景更新。
-- 新增 loading skeleton 與 API error fallback，後端 action 尚未部署時不阻塞整站。
-- 交易紀錄 API 前端預設帶 limit=100。
-- 通知中心預設帶 limit=100。
-- 股票詳情以單一 symbol lazy load，避免進入頁面時抓全市場資料。
-- 手機版候選、通知、策略卡片新增 contain 與 overflow 控制，降低 DOM reflow 與橫向捲動問題。
+- 所有 v11 GET API 優先讀 CacheService，再讀 DashboardCache，最後才重建。
+- API 新增 inflight request map，同一 action 與參數共用請求。
+- 前端建立完整 pageDataCache，頁面先顯示 stale 資料再背景更新。
+- 首頁只合併 dashboard、marketSummary、stats、strategyHealth、候選與通知摘要快取。
+- 候選排行、市場、策略研究、策略健檢與統計頁不在開頁時掃描完整大型工作表。
+- Analysis 改為單一 symbol 最近 250 筆資料與 analysis:symbol 快取。
+- Transactions、Notifications、BacktestRuns 與 BacktestResult 加入 limit / offset 或明細上限。
+- 回測頁初始載入只顯示最近 runs，點擊後才取得交易明細。
+- 新增 getRecentSheetObjects_、getRecentRowsBySymbols_ 與 getOrBuildCachedResponse_ 共用函式。
+- 新增 safeRun_、runDailyDerivedCaches 與 DashboardCache 清理機制。
+- 手機版固定保留五個底部入口，其餘功能收進更多選單，長列表使用載入更多。
+- 所有新增頁面具備 skeleton、局部錯誤與 stale cache fallback，不會造成整頁白畫面。

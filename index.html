@@ -23,6 +23,7 @@
         <button class="nav-btn" data-page="candidates">候選清單</button>
         <button class="nav-btn" data-page="leaderboard">候選排行</button>
         <button class="nav-btn" data-page="market">市場總覽</button>
+        <button class="nav-btn" data-page="strategyResearch">策略研究</button>
         <button class="nav-btn" data-page="strategyHealth">策略健康</button>
         <button class="nav-btn" data-page="notifications">通知中心</button>
         <button class="nav-btn" data-page="stats">統計中心</button>
@@ -32,6 +33,7 @@
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
         <button class="nav-btn" data-page="analysis">線圖分析</button>
         <button class="nav-btn" data-page="transactions">交易紀錄</button>
+        <button class="nav-btn mobile-more-btn" id="btnMobileMore" type="button">更多</button>
       </nav>
     </aside>
 
@@ -46,12 +48,14 @@
           <button id="btnUpdateDaily">更新盤後資料</button>
           <button id="btnBackfillHistory">回補歷史資料</button>
           <button id="btnRefreshVersion">更新版本</button>
+          <button id="btnNotificationCenter" class="notification-button" type="button" aria-label="開啟通知中心">通知 <span id="notificationUnreadCount" class="notification-count" hidden>0</span></button>
           <div class="muted" id="apiStatus">尚未連線</div>
         </div>
       </div>
 
       <section id="dashboardPage" class="page active">
         <div id="marketCards" class="grid-4"></div>
+        <div id="dashboardV11Summary" class="dashboard-v11-summary"></div>
 
         <div class="panel">
           <div class="panel-header">
@@ -194,6 +198,9 @@
       <section id="strategyHealthPage" class="page">
         <div id="strategyHealthCards" class="grid-4"></div>
         <div class="panel"><h2>策略健康</h2><div id="strategyHealthBody" class="v11-grid"></div></div>
+      </section>
+
+      <section id="strategyResearchPage" class="page">
         <div class="panel"><h2>策略研究</h2><div id="strategyResearchBody" class="v11-grid"></div></div>
       </section>
 
@@ -201,6 +208,7 @@
         <div class="panel">
           <div class="panel-header"><div><h2>通知中心</h2><div class="muted">候選、風險、資料更新與策略健康提醒。</div></div><button id="btnClearNotifications" type="button">清除通知</button></div>
           <div id="notificationsBody" class="v11-list"></div>
+          <div class="list-actions"><button id="btnLoadMoreNotifications" type="button" hidden>載入更多</button></div>
         </div>
       </section>
 
@@ -265,6 +273,7 @@
           <div id="backtestStrategyInfo" class="strategy-model-info full"></div>
           <div class="form-actions full"><button type="submit">開始回測</button><span id="backtestMessage" class="muted"></span></div>
         </form>
+        <div class="panel"><h2>最近回測</h2><div id="backtestRunsBody" class="v11-list"></div></div>
         <div id="backtestDiagnostics" class="notice-band diagnostic-band" hidden></div>
         <div id="backtestComparisonPanel" class="panel" hidden>
           <div class="panel-header"><div><h2>模型績效比較</h2><div class="muted">最高報酬只代表此回測區間，不代表下一次仍會勝出</div></div></div>
@@ -399,9 +408,18 @@
               <tbody id="transactionsBody"></tbody>
             </table>
           </div>
+          <div class="list-actions"><button id="btnLoadMoreTransactions" type="button" hidden>載入更多</button></div>
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="mobileMoreSheet" class="mobile-more-sheet" hidden>
+    <button class="mobile-more-backdrop" type="button" data-action="close-mobile-more" aria-label="關閉更多選單"></button>
+    <div class="mobile-more-panel" role="dialog" aria-modal="true" aria-label="更多功能">
+      <div class="mobile-more-header"><strong>更多功能</strong><button type="button" data-action="close-mobile-more" aria-label="關閉">關閉</button></div>
+      <div id="mobileMoreLinks" class="mobile-more-links"></div>
+    </div>
   </div>
 
   <script src="js/config.js?v=11.0"></script>

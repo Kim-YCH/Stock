@@ -153,7 +153,12 @@ const ANALYSIS_LINE_OPTIONS = [
   { key: "bbUpper", label: "布林上軌", color: "#f472b6", default: false, dash: "7 6" },
   { key: "bbLower", label: "布林下軌", color: "#f472b6", default: false, dash: "7 6" },
   { key: "high20", label: "20日高", color: "#eab308", default: false, dash: "5 5" },
-  { key: "low20", label: "20日低", color: "#14b8a6", default: false, dash: "5 5" }
+  { key: "low20", label: "20日低", color: "#14b8a6", default: false, dash: "5 5" },
+  { key: "ema20", label: "EMA20", color: "#fb7185", default: false },
+  { key: "vwap20", label: "VWAP20", color: "#84cc16", default: false },
+  { key: "superTrend", label: "SuperTrend", color: "#f59e0b", default: false, dash: "6 4" },
+  { key: "donchianHigh20", label: "Donchian 上緣", color: "#eab308", default: false, dash: "3 4" },
+  { key: "donchianLow20", label: "Donchian 下緣", color: "#14b8a6", default: false, dash: "3 4" }
 ];
 const analysisLineState = Object.fromEntries(ANALYSIS_LINE_OPTIONS.map(option => [option.key, option.default === true]));
 let activeAnalysisSymbol = "";
@@ -376,7 +381,7 @@ function clearCache(key) {
 }
 
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v10.19" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v11.0" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -438,6 +443,7 @@ function saveTransactionsCache(data) {
 function addCachedTransaction(item) {
   const cached = getCachedTransactions() || { ok: true, items: [] };
   cached.items = [item].concat(cached.items || []);
+  pageDataCache.transactions = cached;
   saveTransactionsCache(cached);
   renderTransactions(cached.items);
 }
@@ -446,6 +452,7 @@ function removeCachedTransaction(id) {
   const cached = getCachedTransactions();
   if (!cached) return;
   cached.items = (cached.items || []).filter(item => String(item.id || "") !== String(id));
+  pageDataCache.transactions = cached;
   saveTransactionsCache(cached);
   renderTransactions(cached.items);
 }
@@ -455,6 +462,7 @@ function upsertCachedWatchlistItem(item) {
   const symbol = String(item.symbol || "").trim();
   const list = (cached.watchlist || []).filter(row => String(row.symbol || "").trim() !== symbol);
   cached.watchlist = [item].concat(list);
+  pageDataCache.dashboard = cached;
   saveDashboardCache(cached);
   renderDashboard(cached);
 }
@@ -467,6 +475,7 @@ function replaceCachedWatchlistItem(symbol, nextItem) {
     if (String(item.symbol || "").trim() !== target) return item;
     return Object.assign({}, item, nextItem, { pending: false });
   });
+  pageDataCache.dashboard = cached;
   saveDashboardCache(cached);
   renderDashboard(cached);
 }
@@ -476,6 +485,7 @@ function removeCachedWatchlistItem(symbol) {
   if (!cached) return;
   const target = String(symbol || "").trim();
   cached.watchlist = (cached.watchlist || []).filter(item => String(item.symbol || "").trim() !== target);
+  pageDataCache.dashboard = cached;
   saveDashboardCache(cached);
   renderDashboard(cached);
 }
@@ -556,6 +566,48 @@ async function onSubmitWatchlist(event) {
 }
 
 async function onDocumentClick(event) {
+  if (event.target.closest('[data-action="close-mobile-more"]')) {
+    closeMobileMore();
+    return;
+  }
+  const pageButton = event.target.closest('[data-action="open-page"]');
+  if (pageButton) {
+    changePage(pageButton.dataset.page);
+    return;
+  }
+  const stockButton = event.target.closest('[data-action="open-stock-detail"]');
+  if (stockButton) {
+    const symbol = normalizeSymbolInput(stockButton.dataset.symbol);
+    const input = document.getElementById("stockDetailSymbol");
+    if (input) input.value = symbol;
+    changePage("stockDetail");
+    return;
+  }
+  const notificationButton = event.target.closest('[data-action="mark-notification-read"]');
+  if (notificationButton) {
+    await markNotificationRead(notificationButton.dataset.id);
+    return;
+  }
+  const backtestButton = event.target.closest('[data-action="open-backtest-result"]');
+  if (backtestButton) {
+    backtestButton.disabled = true;
+    try {
+      renderBacktest(await Api.getBacktestResult(backtestButton.dataset.runId, 100));
+    } catch (err) {
+      setApiStatus("回測結果讀取失敗：" + err.message);
+    } finally {
+      backtestButton.disabled = false;
+    }
+    return;
+  }
+  const modelButton = event.target.closest('[data-action="expand-model-tags"]');
+  if (modelButton) {
+    let names = [];
+    try { names = JSON.parse(decodeURIComponent(modelButton.dataset.models || "")); } catch (err) {}
+    const container = modelButton.closest(".matched-models, .candidate-models");
+    if (container && names.length) container.innerHTML = names.map(name => `<span class="matched-model-tag">${escapeHtml(name)}</span>`).join("");
+    return;
+  }
   const txBtn = event.target.closest('[data-action="delete-transaction"]');
   if (txBtn) {
     await onDeleteTransaction(txBtn);
@@ -588,6 +640,8 @@ async function onDocumentClick(event) {
 }
 
 function changePage(pageName) {
+  if (!pages[pageName] || !document.getElementById(pageName + "Page")) return;
+  closeMobileMore();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.page === pageName);
   });
@@ -603,15 +657,30 @@ function changePage(pageName) {
   pages[pageName].loader();
 }
 
-async function loadDashboard() {
-  const cached = getCachedDashboard();
+let dashboardRetryTimer = null;
+
+async function loadDashboard(options = {}) {
+  const cached = pageDataCache.dashboard || getCachedDashboard();
   if (cached) {
     renderDashboard(cached);
     setApiStatus("已載入快取，正在更新...");
+  } else {
+    renderSkeleton("marketCards", "summary", 4);
+    renderTableLoading("watchlistBody", 9, "首頁資料載入中");
   }
 
   try {
-    const data = await Api.getDashboard();
+    const data = await Api.getDashboard(options.force === true);
+    if (data.cacheMiss || data.rebuilding) {
+      const displayData = data.cacheMiss && cached ? cached : data;
+      if (displayData) renderDashboard(displayData);
+      scheduleDashboardRetry(data.retryAfterSeconds);
+      setApiStatus(data.message || "首頁快取正在背景更新");
+      return;
+    }
+
+    clearDashboardRetry();
+    pageDataCache.dashboard = data;
     saveDashboardCache(data);
     renderDashboard(data);
     setApiStatus("API 已連線");
@@ -631,18 +700,30 @@ function renderDashboard(data) {
 
   renderUpdateStatus(updatedAt, dataDate, data.version, lastRun);
   renderMarketCards(data.market || []);
+  renderDashboardV11Summary(data);
   renderWatchlist(data.watchlist || []);
 }
 
 async function loadCandidates() {
+  const cached = pageDataCache.candidates;
+  if (cached) {
+    currentCandidateData = cached;
+    renderCandidates(cached);
+  } else {
+    renderTableLoading("buyCandidatesBody", 9, "候選資料載入中");
+    renderTableLoading("sellCandidatesBody", 12, "候選資料載入中");
+  }
   try {
     const data = await Api.getCandidates();
+    pageDataCache.candidates = data;
     currentCandidateData = data;
     renderCandidates(data);
     setApiStatus("候選清單已更新");
   } catch (err) {
-    currentCandidateData = Mock.candidates;
-    renderCandidates(Mock.candidates);
+    if (!cached) {
+      currentCandidateData = Mock.candidates;
+      renderCandidates(Mock.candidates);
+    }
     setApiStatus("候選清單載入失敗：" + err.message);
   }
 }
@@ -659,7 +740,7 @@ function renderCandidates(data) {
   document.getElementById("buyCandidatesBody").innerHTML = buyItems.length
     ? buyItems.map(item => `
         <tr>
-          <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+          <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
           <td data-label="模型" class="candidate-models">${formatCandidateModels(item)}</td>
           <td data-label="收盤價">${number(item.close)}</td>
           <td data-label="RSI">${number(item.rsi14)}</td>
@@ -667,7 +748,7 @@ function renderCandidates(data) {
           <td data-label="風險分數">${number(item.riskScore)}</td>
           <td data-label="狀態"><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
           <td data-label="候選分數"><strong>${number(item.buyScore)}</strong></td>
-          <td data-label="符合原因" class="candidate-reason">${escapeHtml(item.reason || "")}</td>
+          <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
         </tr>
       `).join("")
     : candidateEmptyRow(`目前沒有符合「${strategyName}」的買入候選`, 9);
@@ -677,7 +758,7 @@ function renderCandidates(data) {
         const pnlClass = Number(item.unrealizedPnl) >= 0 ? "up" : "down";
         return `
           <tr>
-            <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+            <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
             <td data-label="模型" class="candidate-models">${formatCandidateModels(item)}</td>
             <td data-label="收盤價">${number(item.close)}</td>
             <td data-label="平均成本">${number(item.avgCost)}</td>
@@ -688,7 +769,7 @@ function renderCandidates(data) {
             <td data-label="技術分數">${number(item.totalScore)}</td>
             <td data-label="風險分數">${number(item.riskScore)}</td>
             <td data-label="候選分數"><strong>${number(item.sellScore)}</strong></td>
-            <td data-label="符合原因" class="candidate-reason">${escapeHtml(item.reason || "")}</td>
+            <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
           </tr>
         `;
       }).join("")
@@ -716,7 +797,16 @@ function formatCandidateModels(item) {
     : String(item.modelNames || item.strategyName || "").split(/[、,]/).map(name => name.trim()).filter(Boolean);
   const unique = Array.from(new Set(names));
   if (!unique.length) return escapeHtml("未標示");
-  return unique.map(name => `<span>${escapeHtml(name)}</span>`).join("");
+  return renderModelTags(unique, 2);
+}
+
+function renderCandidateReasons(item) {
+  const reasons = normalizeTextList(item.reasonList || item.reason);
+  const risks = normalizeTextList(item.riskList);
+  return `<details class="candidate-details"><summary>${escapeHtml(item.actionSuggestion || reasons[0] || "查看理由")}</summary>
+    ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+    ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+  </details>`;
 }
 
 function setupStrategyModelSelectors() {
@@ -832,27 +922,36 @@ async function loadPaperSummary() {
   const dashboard = getCachedDashboard();
   const symbolInput = document.querySelector("#paperStrategyForm input[name='symbols']");
   if (symbolInput && !symbolInput.value && dashboard && dashboard.watchlist) symbolInput.value = dashboard.watchlist.map(item => normalizeSymbolInput(item.symbol)).filter(Boolean).join(",");
-  try { renderPaperSummary(await Api.getPaperSummary()); setApiStatus("虛擬交易資料已更新"); }
-  catch (err) { renderPaperSummary(Mock.paper); setApiStatus("虛擬交易載入失敗：" + err.message); }
+  if (pageDataCache.paperSummary) renderPaperSummary(pageDataCache.paperSummary);
+  else renderSkeleton("paperSummaryCards", "summary", 4);
+  try {
+    const data = await Api.getPaperSummary();
+    pageDataCache.paperSummary = data;
+    renderPaperSummary(data);
+    setApiStatus("虛擬交易資料已更新");
+  } catch (err) {
+    if (!pageDataCache.paperSummary) renderPaperSummary(Mock.paper);
+    setApiStatus("虛擬交易載入失敗：" + err.message);
+  }
 }
 
 async function onCreatePaperStrategy(event) {
   event.preventDefault(); const form = event.currentTarget; const data = Object.fromEntries(new FormData(form).entries());
   data.enabled = form.elements.enabled.checked ? "true" : "false"; data.symbols = normalizeSymbolListInput(data.symbols);
   const message = document.getElementById("paperMessage"); message.textContent = "正在建立策略...";
-  try { const result = await Api.createPaperStrategy(data); renderPaperSummary(result.summary); message.textContent = "虛擬策略已建立"; }
+  try { const result = await Api.createPaperStrategy(data); pageDataCache.paperSummary = result.summary; renderPaperSummary(result.summary); message.textContent = "虛擬策略已建立"; }
   catch (err) { message.textContent = "建立失敗：" + err.message; }
 }
 
 async function onRunPaperTrading() {
   const message = document.getElementById("paperMessage"); message.textContent = "正在執行盤後虛擬交易...";
-  try { const result = await Api.runPaperTrading(); message.textContent = `完成，本次產生 ${result.tradeCount || 0} 筆虛擬交易`; await loadPaperSummary(); }
+  try { const result = await Api.runPaperTrading(); pageDataCache.paperSummary = null; message.textContent = `完成，本次產生 ${result.tradeCount || 0} 筆虛擬交易`; await loadPaperSummary(); }
   catch (err) { message.textContent = "執行失敗：" + err.message; }
 }
 
 async function onTogglePaperStrategy(event) {
   const input = event.target.closest("[data-strategy-id]"); if (!input) return;
-  try { const result = await Api.togglePaperStrategy(input.dataset.strategyId, input.checked ? "true" : "false"); renderPaperSummary(result.summary); }
+  try { const result = await Api.togglePaperStrategy(input.dataset.strategyId, input.checked ? "true" : "false"); pageDataCache.paperSummary = result.summary; renderPaperSummary(result.summary); }
   catch (err) { input.checked = !input.checked; setApiStatus("策略狀態更新失敗：" + err.message); }
 }
 
@@ -877,16 +976,41 @@ function renderPaperSummary(data) {
 }
 
 async function loadBacktestRuns() {
+  if (pageDataCache.backtestRuns) renderBacktestRuns(pageDataCache.backtestRuns);
+  else renderSkeleton("backtestRunsBody", "list", 3);
   try {
     const data = await Api.getBacktestRuns();
-    const done = (data.items || []).find(item => item.status === "DONE");
-    if (!done) return;
-    currentBacktestResults = [];
-    document.getElementById("backtestComparisonPanel").hidden = true;
-    renderBacktest(await Api.getBacktestResult(done.runId));
+    pageDataCache.backtestRuns = data;
+    renderBacktestRuns(data);
   } catch (err) {
     setApiStatus("尚無回測結果");
   }
+}
+
+function scheduleDashboardRetry(retryAfterSeconds) {
+  clearDashboardRetry();
+  const seconds = Math.max(10, Number(retryAfterSeconds || 70));
+  dashboardRetryTimer = setTimeout(() => {
+    dashboardRetryTimer = null;
+    loadDashboard({ force: true });
+  }, seconds * 1000);
+}
+
+function clearDashboardRetry() {
+  if (!dashboardRetryTimer) return;
+  clearTimeout(dashboardRetryTimer);
+  dashboardRetryTimer = null;
+}
+
+function renderBacktestRuns(data) {
+  const items = data && Array.isArray(data.items) ? data.items : [];
+  const container = document.getElementById("backtestRunsBody");
+  if (!container) return;
+  container.innerHTML = items.map(item => `<article class="v11-card">
+    <div class="v11-card-head"><strong>${escapeHtml(item.strategyName || item.runId || "回測")}</strong><span class="pill">${escapeHtml(item.status || "-")}</span></div>
+    <div class="v11-meta">${escapeHtml(item.startDate || "")} 至 ${escapeHtml(item.endDate || "")} · ${escapeHtml(item.symbols || "")}</div>
+    ${item.status === "DONE" ? `<button type="button" data-action="open-backtest-result" data-run-id="${escapeHtml(String(item.runId || ""))}">查看結果</button>` : ""}
+  </article>`).join("") || renderV11Empty("尚無回測紀錄");
 }
 
 async function onRunBacktest(event) {
@@ -1120,7 +1244,7 @@ function renderWatchlist(items) {
     const safeName = escapeHtml(String(item.name || ""));
     return `
       <tr>
-        <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+        <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
         <td data-label="收盤">${number(item.close)}</td>
         <td data-label="RSI">${number(item.rsi14)}</td>
         <td data-label="量比">${number(item.volumeRatio)}</td>
@@ -1135,14 +1259,25 @@ function renderWatchlist(items) {
 }
 
 async function loadPortfolio() {
-  let data;
+  let data = pageDataCache.portfolio;
+  if (data) renderPortfolioData(data);
+  else {
+    renderSkeleton("portfolioSummary", "summary", 4);
+    renderTableLoading("portfolioBody", 8, "庫存資料載入中");
+  }
   try {
     data = await Api.getPortfolio();
+    pageDataCache.portfolio = data;
     setApiStatus("API 已連線");
   } catch (err) {
-    data = Mock.portfolio;
+    data = data || Mock.portfolio;
     setApiStatus(err.message);
   }
+
+  renderPortfolioData(data);
+}
+
+function renderPortfolioData(data) {
 
   const items = data.items || [];
   const totalCost = items.reduce((sum, x) => sum + Number(x.totalCost || (x.avgCost * x.quantity) || 0), 0);
@@ -1161,7 +1296,7 @@ async function loadPortfolio() {
     const pnlCls = Number(item.unrealizedPnl) >= 0 ? "up" : "down";
     return `
       <tr>
-        <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+        <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
         <td data-label="股數">${number(item.quantity)}</td>
         <td data-label="平均成本">${number(item.avgCost)}</td>
         <td data-label="收盤價">${number(item.lastPrice)}</td>
@@ -1190,6 +1325,7 @@ async function loadAnalysis(symbol, forceRefresh = false) {
 
   let request = analysisRequests.get(symbol);
   if (!request) {
+    document.getElementById("mainChart").innerHTML = `<text x="40" y="80" fill="#94a3b8">線圖載入中...</text>`;
     request = Api.getAnalysis(symbol, forceRefresh)
       .then(data => {
         analysisMemoryCache.set(symbol, data);
@@ -1257,6 +1393,15 @@ function renderAnalysis(data, symbol) {
     ["布林 %B", formatMetricNumber(latest.bbPercentB)],
     ["ATR %", formatMetricPercent(latest.atrPercent)],
     ["ADX14", formatMetricNumber(latest.adx14)],
+    ["EMA20", formatMetricNumber(latest.ema20)],
+    ["VWAP20", formatMetricNumber(latest.vwap20)],
+    ["OBV / OBV MA20", formatMetricPair(latest.obv, latest.obvMa20)],
+    ["MFI14", formatMetricNumber(latest.mfi14)],
+    ["CCI20", formatMetricNumber(latest.cci20)],
+    ["Williams %R", formatMetricNumber(latest.williamsR14)],
+    ["ROC5 / ROC20", formatMetricPair(latest.roc5, latest.roc20)],
+    ["SuperTrend", latest.superTrendDirection || formatMetricNumber(latest.superTrend)],
+    ["Donchian 上 / 下", formatMetricPair(latest.donchianHigh20, latest.donchianLow20)],
     ["20 日高 / 低", formatMetricPair(latest.high20, latest.low20)],
     ["技術分數", formatMetricNumber(latest.totalScore)],
     ["風險分數", formatMetricNumber(latest.riskScore)],
@@ -1317,23 +1462,36 @@ function renderAnalysisDataNotice(data) {
   el.textContent = status.message || "部分技術指標尚未計算，請重新整理或重新計算分析資料。";
 }
 
-async function loadTransactions() {
-  const cached = getCachedTransactions();
-  if (cached) {
+async function loadTransactions(options = {}) {
+  const state = paginationState.transactions;
+  if (state.loading) return;
+  const append = options.append === true;
+  if (!append) state.offset = 0;
+  const cached = pageDataCache.transactions || getCachedTransactions();
+  if (cached && !append) {
     renderTransactions(cached.items || []);
-    setApiStatus("已載入交易快取，正在更新...");
+    setApiStatus("已顯示交易快取，正在背景更新");
+  } else if (!append) {
+    renderTableLoading("transactionsBody", 9, "交易紀錄載入中");
   }
-
+  state.loading = true;
+  updateLoadMoreButton("btnLoadMoreTransactions", false, true);
   try {
-    const data = await Api.getTransactions();
-    saveTransactionsCache(data);
-    renderTransactions(data.items || []);
-    setApiStatus("API 已連線");
+    const data = await Api.getTransactions({ limit: state.limit, offset: state.offset });
+    const previousItems = append && pageDataCache.transactions ? pageDataCache.transactions.items || [] : [];
+    const merged = Object.assign({}, data, { items: previousItems.concat(data.items || []) });
+    pageDataCache.transactions = merged;
+    state.hasMore = Boolean(data.hasMore);
+    state.offset = merged.items.length;
+    saveTransactionsCache(merged);
+    renderTransactions(merged.items);
+    setApiStatus("交易紀錄已更新");
   } catch (err) {
-    if (!cached) {
-      renderTransactions(Mock.transactions.items || []);
-    }
-    setApiStatus(err.message);
+    if (!cached) renderTransactions(Mock.transactions.items || []);
+    setApiStatus("交易紀錄載入失敗：" + err.message);
+  } finally {
+    state.loading = false;
+    updateLoadMoreButton("btnLoadMoreTransactions", state.hasMore, false);
   }
 }
 
@@ -1346,7 +1504,7 @@ function renderTransactions(items) {
     <tr>
       <td data-label="日期">${escapeHtml(item.date || "")}</td>
       <td data-label="類型">${escapeHtml(item.action || "")}</td>
-      <td data-label="股票">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</td>
+      <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
       <td data-label="股數">${number(item.quantity)}</td>
       <td data-label="價格">${number(item.price)}</td>
       <td data-label="手續費">${number(item.fee)}</td>
@@ -1396,6 +1554,7 @@ async function onSubmitTransaction(event) {
     analysisMemoryCache.clear();
     clearCache(CACHE_KEYS.dashboard);
     clearCache(CACHE_KEYS.transactions);
+    pageDataCache.transactions = null;
     message.textContent = "新增成功";
     await loadTransactions();
   } catch (err) {
@@ -1425,6 +1584,7 @@ async function onDeleteTransaction(btn) {
     analysisMemoryCache.clear();
     clearCache(CACHE_KEYS.dashboard);
     clearCache(CACHE_KEYS.transactions);
+    pageDataCache.transactions = null;
     setApiStatus("已刪除交易紀錄");
     await loadTransactions();
   } catch (err) {
@@ -1687,19 +1847,32 @@ function escapeHtml(value) {
 }
 
 /* StockLab v11 extension: lazy pages, request-friendly renderers, and compact mobile UI. */
-const v11PageDataCache = {
+const pageDataCache = {
+  dashboard: null,
+  portfolio: null,
+  candidates: null,
   candidateLeaderboard: null,
   marketSummary: null,
   strategyResearch: null,
   strategyHealth: null,
   stats: null,
   notifications: null,
+  paperSummary: null,
+  backtestRuns: null,
+  transactions: null,
+  analysis: {},
   stockDetail: {}
+};
+
+const paginationState = {
+  transactions: { limit: 50, offset: 0, hasMore: false, loading: false },
+  notifications: { limit: 50, offset: 0, hasMore: false, loading: false }
 };
 
 Object.assign(pages, {
   leaderboard: { title: "候選排行", subtitle: "買進與賣出候選依信心、風險與模型命中排序", loader: loadCandidateLeaderboard },
   market: { title: "市場總覽", subtitle: "大盤、廣度、關注清單與風險模式", loader: loadMarketSummary },
+  strategyResearch: { title: "策略研究", subtitle: "彙整策略模型的回測表現與適用情境", loader: loadStrategyResearch },
   strategyHealth: { title: "策略健康", subtitle: "用近期回測與虛擬交易觀察模型穩定度", loader: loadStrategyHealthPage },
   notifications: { title: "通知中心", subtitle: "候選、風險、策略與資料更新提醒", loader: loadNotifications },
   stats: { title: "統計中心", subtitle: "資料列、交易、策略與候選摘要", loader: loadStats },
@@ -1715,17 +1888,27 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   const clearButton = document.getElementById("btnClearNotifications");
   if (clearButton) clearButton.addEventListener("click", clearV11Notifications);
+  const notificationButton = document.getElementById("btnNotificationCenter");
+  if (notificationButton) notificationButton.addEventListener("click", () => changePage("notifications"));
+  const moreNotifications = document.getElementById("btnLoadMoreNotifications");
+  if (moreNotifications) moreNotifications.addEventListener("click", () => loadNotifications({ append: true }));
+  const moreTransactions = document.getElementById("btnLoadMoreTransactions");
+  if (moreTransactions) moreTransactions.addEventListener("click", () => loadTransactions({ append: true }));
+  const mobileMore = document.getElementById("btnMobileMore");
+  if (mobileMore) mobileMore.addEventListener("click", openMobileMore);
+  buildMobileMoreLinks();
+  loadNotificationSummary();
 });
 
 async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder) {
-  const cached = v11PageDataCache[cacheKey];
+  const cached = pageDataCache[cacheKey];
   if (cached) renderFn(cached, { stale: true });
   else renderV11Loading(cacheKey);
 
   try {
     const data = await fetcher();
-    v11PageDataCache[cacheKey] = data;
-    renderFn(data, { stale: false });
+    pageDataCache[cacheKey] = data;
+    if (!cached || !sameCachedVersion(cached, data)) renderFn(data, { stale: false });
     setApiStatus("v11 資料已更新");
   } catch (err) {
     if (cached) {
@@ -1736,6 +1919,13 @@ async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder
     renderFn(fallback, { stale: false, error: err });
     setApiStatus("v11 API 尚未可用：" + err.message);
   }
+}
+
+function sameCachedVersion(previous, next) {
+  if (!previous || !next) return false;
+  const previousStamp = previous.updatedAt || previous.dataDate || previous.version || "";
+  const nextStamp = next.updatedAt || next.dataDate || next.version || "";
+  return Boolean(previousStamp && nextStamp && String(previousStamp) === String(nextStamp));
 }
 
 function renderV11Loading(cacheKey) {
@@ -1781,15 +1971,18 @@ function renderCandidateLeaderboard(data) {
 function renderV11CandidateCard(item, rank) {
   const type = String(item.candidateType || "BUY").toUpperCase();
   const score = Number(item.confidenceScore || item.buyScore || item.sellScore || item.totalScore || 0);
-  const reasons = normalizeTextList(item.reasonList || item.reason || item.actionSuggestion).slice(0, 3);
-  const risks = normalizeTextList(item.riskList).slice(0, 2);
+  const reasons = normalizeTextList(item.reasonList || item.reason || item.actionSuggestion);
+  const risks = normalizeTextList(item.riskList);
   return `<article class="v11-card">
-    <div class="v11-card-head"><strong>${rank}. ${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")}</strong><span class="pill ${type === "SELL" ? "danger" : ""}">${type === "SELL" ? "賣出" : "買進"}</span></div>
-    <div class="v11-score"><span>${number(score)}</span><small>${escapeHtml(item.gradeText || scoreToGradeText(score))}</small></div>
+    <div class="v11-card-head"><strong>${number(item.rank || rank)}. ${renderStockLink(item.symbol, item.name)}</strong><span class="pill ${type === "SELL" ? "danger" : ""}">${type === "SELL" ? "賣出" : "買進"}</span></div>
+    <div class="v11-score"><span>${number(score)}</span><small>${escapeHtml(item.gradeText || scoreToGradeText(score))} · ${renderStars(item.stars || scoreToStars(score))}</small></div>
     <div class="matched-models">${renderModelTags(item.matchedModelNames || item.matchedModels || item.strategyName, 2)}</div>
     <div class="v11-meta">收盤 ${number(item.close)} · RSI ${number(item.rsi14)} · 風險 ${number(item.riskScore)}</div>
-    ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
-    ${risks.length ? `<div class="v11-risk">${risks.map(escapeHtml).join(" · ")}</div>` : ""}
+    <div class="candidate-action">${escapeHtml(item.actionSuggestion || "")}</div>
+    <details class="candidate-details"><summary>查看理由與風險</summary>
+      ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+      ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+    </details>
   </article>`;
 }
 
@@ -1801,6 +1994,7 @@ function renderMarketSummary(data) {
   const taiex = data.taiex || {};
   const breadth = data.breadth || {};
   const watch = data.watchlistMarket || {};
+  const sectors = data.sectorProxy || {};
   document.getElementById("marketSummaryCards").innerHTML = [
     summaryCard("TAIEX", number(taiex.close), Number(taiex.change) >= 0 ? "up" : "down"),
     summaryCard("大盤模式", escapeHtml(data.marketMode || taiex.trendText || "-"), ""),
@@ -1814,12 +2008,18 @@ function renderMarketSummary(data) {
       ${renderKeyValueCard("強勢 / 弱勢", `${number(breadth.strongCount)} / ${number(breadth.weakCount)}`)}
       ${renderKeyValueCard("過熱 / 超跌", `${number(breadth.overheatCount)} / ${number(breadth.oversoldCount)}`)}
       ${renderKeyValueCard("Risk On", data.marketRiskOn ? "是" : "否")}
-    </div>`;
+    </div>
+    <div class="v11-card"><strong>產業代理分數</strong><div class="period-status">
+      <span>半導體 ${number(sectors.semiconductor)}</span><span>AI 伺服器 ${number(sectors.aiServer)}</span><span>金融 ${number(sectors.financial)}</span><span>航運 ${number(sectors.shipping)}</span><span>ETF ${number(sectors.etf)}</span>
+    </div></div>`;
 }
 
 function loadStrategyHealthPage() {
-  loadV11PageWithCache("strategyHealth", () => Api.getStrategyHealth(), renderStrategyHealth, () => ({ ok: false, models: [] }));
-  loadV11PageWithCache("strategyResearch", () => Api.getStrategyResearch(), renderStrategyResearch, () => ({ ok: false, items: [] }));
+  return loadV11PageWithCache("strategyHealth", () => Api.getStrategyHealth(), renderStrategyHealth, () => ({ ok: false, models: [] }));
+}
+
+function loadStrategyResearch() {
+  return loadV11PageWithCache("strategyResearch", () => Api.getStrategyResearch(), renderStrategyResearch, () => ({ ok: false, items: [] }));
 }
 
 function renderStrategyHealth(data) {
@@ -1842,29 +2042,58 @@ function renderStrategyHealth(data) {
 function renderStrategyResearch(data) {
   const items = Array.isArray(data.items) ? data.items : Array.isArray(data.models) ? data.models : [];
   document.getElementById("strategyResearchBody").innerHTML = items.map(item => `<article class="v11-card">
-    <div class="v11-card-head"><strong>${escapeHtml(item.strategyName || item.strategyType || "策略")}</strong><span class="pill">PF ${number(item.profitFactor)}</span></div>
-    <div class="v11-meta">交易 ${number(item.tradeCount)} · 勝率 ${number(item.winRate)}% · 平均持有 ${number(item.avgHoldingDays)} 日</div>
-    <div>${escapeHtml(item.summaryText || item.description || "")}</div>
+    <div class="v11-card-head"><strong>${escapeHtml(item.strategyName || item.strategyType || "策略")}</strong><span class="pill">${escapeHtml(item.healthStatus || "-")}</span></div>
+    <div class="v11-meta">交易 ${number(item.tradeCount)} · 勝率 ${number(item.winRate)}% · 累計報酬 ${number(item.totalReturn)}% · 平均報酬 ${number(item.avgReturn)}%</div>
+    <div class="v11-meta">PF ${number(item.profitFactor)} · 最大回撤 ${number(item.maxDrawdown)}% · 平均持有 ${number(item.avgHoldingDays)} 日</div>
+    <div class="period-status"><span>30 天 ${escapeHtml(item.status30 || "樣本不足")}</span><span>90 天 ${escapeHtml(item.status90 || "樣本不足")}</span><span>180 天 ${escapeHtml(item.status180 || "樣本不足")}</span></div>
+    <p>${escapeHtml(item.summaryText || item.description || "")}</p>
+    <div class="v11-meta">適合：${escapeHtml(item.bestFor || item.applicableType || "-")}<br>不適合：${escapeHtml(item.notBestFor || "-")}</div>
   </article>`).join("") || renderV11Empty("尚無策略研究資料");
 }
 
-function loadNotifications() {
-  return loadV11PageWithCache("notifications", () => Api.getNotifications({ limit: 100 }), renderNotifications, () => ({ ok: false, items: [] }));
+async function loadNotifications(options = {}) {
+  const state = paginationState.notifications;
+  if (state.loading) return;
+  const append = options.append === true;
+  if (!append) state.offset = 0;
+  const cached = pageDataCache.notifications;
+  if (cached && !append) renderNotifications(cached, { stale: true });
+  else if (!append) renderV11Loading("notifications");
+  state.loading = true;
+  updateLoadMoreButton("btnLoadMoreNotifications", false, true);
+  try {
+    const data = await Api.getNotifications({ limit: state.limit, offset: state.offset });
+    const previousItems = append && cached ? cached.items || [] : [];
+    const merged = Object.assign({}, data, { items: previousItems.concat(data.items || []) });
+    pageDataCache.notifications = merged;
+    state.hasMore = Boolean(data.hasMore);
+    state.offset = merged.items.length;
+    renderNotifications(merged);
+    updateNotificationBadge(data.unreadCount);
+  } catch (err) {
+    if (!cached) showPageError("notificationsBody", err);
+    else setApiStatus("通知資料可能不是最新：" + err.message);
+  } finally {
+    state.loading = false;
+    updateLoadMoreButton("btnLoadMoreNotifications", state.hasMore, false);
+  }
 }
 
 function renderNotifications(data) {
   const items = Array.isArray(data.items) ? data.items : [];
-  document.getElementById("notificationsBody").innerHTML = items.slice(0, 50).map(item => `<article class="notification-card ${String(item.level || "info").toLowerCase()}">
+  document.getElementById("notificationsBody").innerHTML = items.map(item => `<article class="notification-card ${String(item.level || "info").toLowerCase()} ${isNotificationRead(item) ? "is-read" : "is-unread"}">
     <div class="v11-card-head"><strong>${escapeHtml(item.title || item.type || "通知")}</strong><span>${escapeHtml(item.date || item.createdAt || "")}</span></div>
     <div class="notification-message">${escapeHtml(item.message || "")}</div>
-    <div class="v11-meta">${escapeHtml(displaySymbol(item.symbol, item.name))} ${escapeHtml(item.name || "")} · ${escapeHtml(item.source || "StockLab")}</div>
+    <div class="notification-footer"><div class="v11-meta">${item.symbol ? renderStockLink(item.symbol, item.name) : ""} · ${escapeHtml(item.source || "StockLab")}</div>${isNotificationRead(item) ? "" : `<button type="button" data-action="mark-notification-read" data-id="${escapeHtml(String(item.id || ""))}">標為已讀</button>`}</div>
   </article>`).join("") || renderV11Empty("目前沒有通知");
 }
 
 async function clearV11Notifications() {
   if (!Api.clearNotifications) return;
   await Api.clearNotifications();
-  v11PageDataCache.notifications = null;
+  pageDataCache.notifications = null;
+  paginationState.notifications.offset = 0;
+  updateNotificationBadge(0);
   await loadNotifications();
 }
 
@@ -1879,8 +2108,13 @@ function renderStats(data) {
     summaryCard("交易紀錄", number(data.transactionCount), ""),
     summaryCard("價格資料", number(data.priceRows), "")
   ].join("");
-  const fields = ["indicatorRows", "backtestRunCount", "paperStrategyCount", "paperTradeCount", "candidateBuyCount", "candidateSellCount", "avgWinRate", "avgProfitFactor", "avgHoldingDays", "lastDataDate", "lastUpdateAt"];
-  document.getElementById("statsBody").innerHTML = fields.map(key => renderKeyValueCard(key, data[key])).join("");
+  const fields = [
+    ["技術指標資料", "indicatorRows"], ["回測次數", "backtestRunCount"], ["虛擬策略", "paperStrategyCount"], ["虛擬交易", "paperTradeCount"],
+    ["買入候選", "candidateBuyCount"], ["賣出候選", "candidateSellCount"], ["最佳策略", "bestStrategy"], ["最佳候選", "bestSymbol"],
+    ["最佳 ETF", "bestEtf"], ["最佳股票", "bestStock"], ["平均勝率", "avgWinRate"], ["平均 PF", "avgProfitFactor"],
+    ["平均持有天數", "avgHoldingDays"], ["平均交易報酬", "avgTradeReturn"], ["最後資料日", "lastDataDate"], ["最後更新", "lastUpdateAt"]
+  ];
+  document.getElementById("statsBody").innerHTML = fields.map(([label, key]) => renderKeyValueCard(label, data[key])).join("");
 }
 
 function loadStockDetailFromInput() {
@@ -1896,16 +2130,16 @@ function loadStockDetailFromInput() {
 
 async function loadStockDetail(symbol) {
   symbol = normalizeSymbolInput(symbol);
-  const cached = v11PageDataCache.stockDetail[symbol];
+  const cached = pageDataCache.stockDetail[symbol];
   if (cached) renderStockDetail(cached);
   try {
     const data = Api.getStockDetail ? await Api.getStockDetail(symbol) : await Api.getAnalysis(symbol);
-    v11PageDataCache.stockDetail[symbol] = data;
+    pageDataCache.stockDetail[symbol] = data;
     renderStockDetail(data);
   } catch (err) {
     try {
       const fallback = await Api.getAnalysis(symbol);
-      v11PageDataCache.stockDetail[symbol] = fallback;
+      pageDataCache.stockDetail[symbol] = fallback;
       renderStockDetail(fallback);
     } catch (fallbackErr) {
       renderStockDetail({ ok: false, symbol, message: fallbackErr.message });
@@ -1914,23 +2148,38 @@ async function loadStockDetail(symbol) {
 }
 
 function renderStockDetail(data) {
+  if (!data || data.ok === false) {
+    showPageError("stockDetailBody", new Error((data && data.message) || "股票詳細資料讀取失敗"));
+    return;
+  }
   const latest = data.latest || data.indicator || {};
   const candidate = data.candidate || {};
   const portfolio = data.portfolio || {};
   document.getElementById("stockDetailTitle").textContent = `${data.symbol || ""} ${data.name || ""} 股票詳情`;
+  const technicalFields = [
+    ["收盤價", latest.close || data.close], ["MA5 / MA20 / MA60", [latest.ma5, latest.ma20, latest.ma60].map(number).join(" / ")],
+    ["RSI14", latest.rsi14], ["MACD Histogram", latest.macdHist], ["KD", `${number(latest.k9)} / ${number(latest.d9)}`],
+    ["布林 %B", latest.bbPercentB], ["ATR %", latest.atrPercent], ["ADX", latest.adx14], ["OBV", latest.obv],
+    ["MFI14", latest.mfi14], ["CCI20", latest.cci20], ["Williams %R", latest.williamsR14],
+    ["ROC 5 / 20", `${number(latest.roc5)}% / ${number(latest.roc20)}%`],
+    ["SuperTrend", `${latest.superTrendDirection || "-"} ${number(latest.superTrend)}`],
+    ["Donchian 20", `${number(latest.donchianLow20)} / ${number(latest.donchianHigh20)}`]
+  ];
+  const signals = Array.isArray(data.signals) ? data.signals : [];
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  const backtests = Array.isArray(data.backtestResults) ? data.backtestResults : [];
   document.getElementById("stockDetailBody").innerHTML = `
-    <div class="v11-grid compact">
-      ${renderKeyValueCard("收盤價", latest.close || data.close)}
-      ${renderKeyValueCard("RSI14", latest.rsi14)}
-      ${renderKeyValueCard("MACD Hist", latest.macdHist)}
-      ${renderKeyValueCard("ADX14", latest.adx14)}
-      ${renderKeyValueCard("OBV", latest.obv)}
-      ${renderKeyValueCard("MFI14", latest.mfi14)}
-      ${renderKeyValueCard("CCI20", latest.cci20)}
-      ${renderKeyValueCard("SuperTrend", latest.superTrendDirection || latest.superTrend)}
-    </div>
-    <div class="v11-card"><strong>規則分析</strong><p>${escapeHtml(data.analysisText || candidate.actionSuggestion || data.message || "尚無分析文字")}</p></div>
-    <div class="v11-card"><strong>持倉</strong><p>股數 ${number(portfolio.quantity)} · 平均成本 ${number(portfolio.avgCost)} · 未實現損益 ${money(portfolio.unrealizedPnl)}</p></div>`;
+    <section><h3>技術狀態</h3><div class="v11-grid compact">${technicalFields.map(field => renderKeyValueCard(field[0], field[1])).join("")}</div></section>
+    <section class="v11-card"><strong>系統分析</strong><p>${escapeHtml(data.analysisText || "尚無分析文字")}</p></section>
+    <section class="v11-card"><div class="v11-card-head"><strong>候選狀態</strong><span class="pill">${escapeHtml(candidate.candidateType || "未入選")}</span></div>
+      <p>信心 ${number(candidate.confidenceScore)} · ${escapeHtml(candidate.gradeText || "-")} · ${escapeHtml(candidate.actionSuggestion || "")}</p>
+      <div class="matched-models">${renderModelTags(candidate.matchedModelNames || candidate.matchedModels, 3)}</div>
+      ${normalizeTextList(candidate.reasonList).length ? `<ul class="v11-reasons">${normalizeTextList(candidate.reasonList).map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+    </section>
+    <section class="v11-card"><strong>持倉</strong><p>${data.isHeld ? "目前持有" : "目前未持有"} · 股數 ${number(portfolio.quantity)} · 平均成本 ${number(portfolio.avgCost)} · 未實現損益 ${money(portfolio.unrealizedPnl)} (${number(portfolio.unrealizedRate)}%)</p></section>
+    <section><h3>最近訊號</h3><div class="v11-list">${signals.map(item => `<div class="v11-card"><strong>${escapeHtml(item.date || "")} ${escapeHtml(item.signalName || item.signalType || "")}</strong><p>${escapeHtml(item.note || "")}</p></div>`).join("") || renderV11Empty("尚無近期訊號")}</div></section>
+    <section><h3>最近交易</h3><div class="v11-list">${transactions.map(item => `<div class="v11-card"><strong>${escapeHtml(item.date || "")} ${escapeHtml(item.action || "")}</strong><p>${number(item.quantity)} 股 · ${number(item.price)} · ${escapeHtml(item.note || "")}</p></div>`).join("") || renderV11Empty("尚無交易紀錄")}</div></section>
+    <section><h3>最近回測</h3><div class="v11-grid">${backtests.map(item => `<div class="v11-card"><strong>${escapeHtml(item.runId || "回測")}</strong><p>勝率 ${number(item.winRate)}% · 報酬 ${number(item.totalReturn)}% · PF ${number(item.profitFactor)}</p></div>`).join("") || renderV11Empty("尚無近期回測結果")}</div></section>`;
 }
 
 function renderModelTags(models, maxVisible = 2) {
@@ -1938,7 +2187,7 @@ function renderModelTags(models, maxVisible = 2) {
   if (!names.length) return '<span class="matched-model-tag">未命中模型</span>';
   const visible = names.slice(0, maxVisible).map(name => `<span class="matched-model-tag">${escapeHtml(name)}</span>`);
   const hidden = names.length - visible.length;
-  if (hidden > 0) visible.push(`<span class="matched-model-tag more">+${hidden}</span>`);
+  if (hidden > 0) visible.push(`<button type="button" class="matched-model-tag more" data-action="expand-model-tags" data-models="${escapeHtml(encodeURIComponent(JSON.stringify(names)))}">+${hidden}</button>`);
   return visible.join("");
 }
 
@@ -1963,4 +2212,155 @@ function renderKeyValueCard(label, value) {
 
 function renderV11Empty(message) {
   return `<div class="v11-empty">${escapeHtml(message)}</div>`;
+}
+
+function renderStockLink(symbol, name) {
+  const normalized = normalizeSymbolInput(symbol);
+  const label = [displaySymbol(normalized, name), name || ""].filter(Boolean).join(" ");
+  if (!normalized) return escapeHtml(label || "-");
+  return `<button type="button" class="stock-link" data-action="open-stock-detail" data-symbol="${escapeHtml(normalized)}">${escapeHtml(label)}</button>`;
+}
+
+function scoreToStars(score) {
+  if (score >= 90) return 5;
+  if (score >= 80) return 4.5;
+  if (score >= 70) return 4;
+  if (score >= 60) return 3;
+  if (score >= 50) return 2;
+  return 1;
+}
+
+function renderStars(stars) {
+  const count = Math.max(1, Math.min(5, Math.round(Number(stars) || 1)));
+  return `${count}/5 星`;
+}
+
+function isNotificationRead(item) {
+  return item && (item.read === true || String(item.read || "").toUpperCase() === "TRUE");
+}
+
+async function loadNotificationSummary() {
+  if (!Api.isConfigured() || !Api.getNotificationSummary) return;
+  try {
+    const data = await Api.getNotificationSummary();
+    updateNotificationBadge(data.unreadCount);
+  } catch (err) {
+    updateNotificationBadge(0);
+  }
+}
+
+function updateNotificationBadge(count) {
+  const badge = document.getElementById("notificationUnreadCount");
+  if (!badge) return;
+  const value = Math.max(0, Number(count) || 0);
+  badge.textContent = value > 99 ? "99+" : String(value);
+  badge.hidden = value === 0;
+}
+
+async function markNotificationRead(id) {
+  if (!id) return;
+  try {
+    await Api.markNotificationRead(id);
+    const cached = pageDataCache.notifications;
+    if (cached) {
+      cached.items = (cached.items || []).map(item => String(item.id) === String(id) ? Object.assign({}, item, { read: true }) : item);
+      cached.unreadCount = Math.max(0, Number(cached.unreadCount || 0) - 1);
+      renderNotifications(cached);
+      updateNotificationBadge(cached.unreadCount);
+    }
+  } catch (err) {
+    setApiStatus("通知狀態更新失敗：" + err.message);
+  }
+}
+
+function updateLoadMoreButton(id, visible, loading) {
+  const button = document.getElementById(id);
+  if (!button) return;
+  button.hidden = !visible && !loading;
+  button.disabled = Boolean(loading);
+  button.textContent = loading ? "載入中..." : "載入更多";
+}
+
+function showLoading(target, message = "資料載入中") {
+  const container = typeof target === "string" ? document.getElementById(target) : target;
+  if (!container) return;
+  container.innerHTML = `<div class="v11-empty loading-state">${escapeHtml(message)}</div>`;
+}
+
+function hideLoading(target) {
+  const container = typeof target === "string" ? document.getElementById(target) : target;
+  if (!container) return;
+  container.querySelectorAll(".loading-state, .skeleton-card").forEach(node => node.remove());
+}
+
+function showPageError(target, err) {
+  const container = typeof target === "string" ? document.getElementById(target) : target;
+  if (!container) return;
+  container.innerHTML = `<div class="v11-empty error-state"><strong>資料讀取失敗</strong><p>原因：${escapeHtml((err && err.message) || "未知錯誤")}</p><p>請稍後重新整理</p></div>`;
+}
+
+function renderSkeleton(container, type = "card", count = 3) {
+  const target = typeof container === "string" ? document.getElementById(container) : container;
+  if (!target) return;
+  target.innerHTML = Array.from({ length: count }).map(() => `<div class="v11-card skeleton-card" data-skeleton-type="${escapeHtml(type)}"></div>`).join("");
+}
+
+function renderTableLoading(tbodyId, colspan, message) {
+  const body = document.getElementById(tbodyId);
+  if (!body) return;
+  body.innerHTML = `<tr><td colspan="${Number(colspan) || 1}" class="muted">${escapeHtml(message || "資料載入中")}</td></tr>`;
+}
+
+function debounce(fn, wait = 250) {
+  let timer = null;
+  return function debounced(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), wait);
+  };
+}
+
+function renderDashboardV11Summary(data) {
+  const container = document.getElementById("dashboardV11Summary");
+  if (!container) return;
+  const market = data.marketSummary;
+  const stats = data.stats;
+  const health = data.strategyHealth;
+  const leaderboard = data.candidateLeaderboardSummary;
+  if (!market && !stats && !health && !leaderboard) {
+    container.innerHTML = "";
+    return;
+  }
+  const warnings = health && Array.isArray(health.models) ? health.models.filter(model => (model.warningList || []).length).length : 0;
+  container.innerHTML = `<div class="grid-4">
+    ${summaryCard("今日市場", escapeHtml((market && market.marketMode) || "-"), market && market.marketRiskOn ? "up" : "down")}
+    ${summaryCard("關注股平均分數", number(market && market.watchlistMarket && market.watchlistMarket.avgScore), "")}
+    ${summaryCard("買入 / 賣出候選", `${number(leaderboard && leaderboard.buyCount)} / ${number(leaderboard && leaderboard.sellCount)}`, "")}
+    ${summaryCard("策略警告", warnings, warnings ? "down" : "up")}
+  </div>
+  <div class="notice-band">${escapeHtml((market && market.summaryText) || "")}${market && market.riskText ? ` · ${escapeHtml(market.riskText)}` : ""}</div>`;
+}
+
+function buildMobileMoreLinks() {
+  const container = document.getElementById("mobileMoreLinks");
+  if (!container) return;
+  const links = [
+    ["leaderboard", "候選排行"], ["market", "市場分析"], ["strategyResearch", "策略研究"],
+    ["strategyHealth", "策略健康"], ["notifications", "通知中心"], ["stats", "統計中心"],
+    ["transactions", "交易紀錄"], ["analysis", "線圖分析"], ["paper", "虛擬交易"], ["stockDetail", "股票詳細"]
+  ];
+  container.innerHTML = links.map(([page, label]) => `<button type="button" data-action="open-page" data-page="${page}">${label}</button>`).join("");
+}
+
+function openMobileMore() {
+  const sheet = document.getElementById("mobileMoreSheet");
+  if (!sheet) return;
+  sheet.hidden = false;
+  document.body.classList.add("mobile-sheet-open");
+}
+
+function closeMobileMore() {
+  const sheet = document.getElementById("mobileMoreSheet");
+  if (!sheet) return;
+  sheet.hidden = true;
+  document.body.classList.remove("mobile-sheet-open");
 }
