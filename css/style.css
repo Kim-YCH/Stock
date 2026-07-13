@@ -378,6 +378,43 @@ th {
   font-weight: 500;
 }
 
+.table-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.table-sort-button::after {
+  content: "↕";
+  width: 12px;
+  color: rgba(148, 163, 184, 0.65);
+  font-size: 11px;
+  text-align: center;
+}
+
+.table-sort-button[data-direction="asc"]::after {
+  content: "▲";
+  color: var(--blue);
+}
+
+.table-sort-button[data-direction="desc"]::after {
+  content: "▼";
+  color: var(--blue);
+}
+
+.table-sort-button:hover,
+.table-sort-button:focus-visible {
+  color: var(--text);
+}
+
 .badge {
   display: inline-block;
   padding: 6px 10px;

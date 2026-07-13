@@ -168,6 +168,8 @@ let currentBacktestResults = [];
 let activeBacktestStrategyType = "";
 let topHistoricalBacktestStrategyType = "";
 let runtimeBackendVersion = "";
+let currentWatchlistItems = [];
+const watchlistSortState = { key: "", direction: "asc" };
 
 document.addEventListener("DOMContentLoaded", () => {
   setAppVersionLabel();
@@ -252,12 +254,17 @@ async function onUpdateDailyPrices() {
 
   try {
     const result = await Api.updateDailyPrices();
-    analysisMemoryCache.clear();
+    invalidateFrontendQuoteCaches();
     const marketText = result.marketIndex && result.marketIndex.ok
       ? `，加權 ${result.marketIndex.close}`
       : `，大盤未更新：${(result.marketIndex && result.marketIndex.message) || "未知原因"}`;
-    setApiStatus(`更新完成：新增 ${result.inserted || 0}，更新 ${result.updated || 0}${marketText}`);
+    const stale = (result.staleSymbols || []).concat(result.unresolvedSymbols || []);
+    const staleText = stale.length ? `，${stale.length} 檔今日尚無資料：${stale.slice(0, 6).join(", ")}` : "";
     await loadDashboard();
+    const derivedText = result.derivedSchedule && result.derivedSchedule.ok
+      ? "，技術指標背景更新中"
+      : "";
+    setApiStatus(`價格更新完成：新增 ${result.inserted || 0}，覆寫 ${result.updated || 0}${marketText}${staleText}${derivedText}`);
   } catch (err) {
     setApiStatus("更新失敗：" + err.message);
   } finally {
@@ -294,9 +301,9 @@ async function onBackfillHistoricalPrices() {
 
   try {
     const result = await Api.backfillHistoricalPrices(months, normalizedSymbols);
-    analysisMemoryCache.clear();
+    invalidateFrontendQuoteCaches();
     setApiStatus(`回補完成：抓到 ${result.fetched || 0} 筆，新增 ${result.inserted || 0}，更新 ${result.updated || 0}`);
-    await loadDashboard();
+    await loadDashboard({ force: true });
   } catch (err) {
     setApiStatus("回補失敗：" + err.message);
   } finally {
@@ -380,8 +387,22 @@ function clearCache(key) {
   }
 }
 
+function invalidateFrontendQuoteCaches() {
+  analysisMemoryCache.clear();
+  pageDataCache.dashboard = null;
+  pageDataCache.portfolio = null;
+  pageDataCache.candidates = null;
+  pageDataCache.candidateLeaderboard = null;
+  pageDataCache.marketSummary = null;
+  pageDataCache.strategyHealth = null;
+  pageDataCache.stats = null;
+  pageDataCache.analysis = {};
+  pageDataCache.stockDetail = {};
+  clearCache(CACHE_KEYS.dashboard);
+}
+
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v11.0" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v11.4" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -533,7 +554,7 @@ async function onSubmitWatchlist(event) {
 
   try {
     const result = await Api.addWatchlist(payload);
-    if (payload.backfill === "true") analysisMemoryCache.clear();
+    if (payload.backfill === "true") invalidateFrontendQuoteCaches();
     (result.stocks || []).forEach(stock => {
       replaceCachedWatchlistItem(stock.symbol, {
         symbol: stock.symbol,
@@ -556,7 +577,9 @@ async function onSubmitWatchlist(event) {
     message.textContent = resultMessage;
     form.reset();
     form.querySelector("input[name='backfill']").checked = false;
-    await loadDashboard();
+    pageDataCache.dashboard = null;
+    clearCache(CACHE_KEYS.dashboard);
+    await loadDashboard({ force: true });
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
     optimisticSymbols.forEach(removeCachedWatchlistItem);
@@ -566,6 +589,11 @@ async function onSubmitWatchlist(event) {
 }
 
 async function onDocumentClick(event) {
+  const sortButton = event.target.closest("[data-watch-sort]");
+  if (sortButton) {
+    setWatchlistSort(sortButton.dataset.watchSort);
+    return;
+  }
   if (event.target.closest('[data-action="close-mobile-more"]')) {
     closeMobileMore();
     return;
@@ -631,7 +659,9 @@ async function onDocumentClick(event) {
     setApiStatus("正在移除關注股票...");
     await Api.removeWatchlist(symbol, name);
     setApiStatus("已移除關注股票");
-    await loadDashboard();
+    pageDataCache.dashboard = null;
+    clearCache(CACHE_KEYS.dashboard);
+    await loadDashboard({ force: true });
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
   } finally {
@@ -666,7 +696,7 @@ async function loadDashboard(options = {}) {
     setApiStatus("已載入快取，正在更新...");
   } else {
     renderSkeleton("marketCards", "summary", 4);
-    renderTableLoading("watchlistBody", 9, "首頁資料載入中");
+    renderTableLoading("watchlistBody", 10, "首頁資料載入中");
   }
 
   try {
@@ -1229,7 +1259,12 @@ function renderMarketCards(items) {
 function renderWatchlist(items) {
   const tbody = document.getElementById("watchlistBody");
   const empty = document.getElementById("emptyWatchlist");
-  const visibleItems = (items || []).filter(item => item.enabled === undefined || item.enabled === true || String(item.enabled).toUpperCase() === "TRUE" || item.enabled === "");
+  currentWatchlistItems = Array.isArray(items) ? items.slice() : currentWatchlistItems;
+  const visibleItems = currentWatchlistItems
+    .filter(item => item.enabled === undefined || item.enabled === true || String(item.enabled).toUpperCase() === "TRUE" || item.enabled === "")
+    .sort(compareWatchlistItems);
+
+  updateWatchlistSortHeaders();
 
   empty.classList.toggle("hidden", visibleItems.length > 0);
 
@@ -1245,6 +1280,7 @@ function renderWatchlist(items) {
     return `
       <tr>
         <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
+        <td data-label="資料日">${escapeHtml(item.date || "-")}</td>
         <td data-label="收盤">${number(item.close)}</td>
         <td data-label="RSI">${number(item.rsi14)}</td>
         <td data-label="量比">${number(item.volumeRatio)}</td>
@@ -1256,6 +1292,48 @@ function renderWatchlist(items) {
       </tr>
     `;
   }).join("");
+}
+
+function setWatchlistSort(key) {
+  const allowed = ["symbol", "date", "close", "rsi14", "volumeRatio", "totalScore", "trendText", "signalSummary"];
+  if (allowed.indexOf(key) < 0) return;
+  if (watchlistSortState.key === key) {
+    watchlistSortState.direction = watchlistSortState.direction === "asc" ? "desc" : "asc";
+  } else {
+    watchlistSortState.key = key;
+    watchlistSortState.direction = ["symbol", "date", "trendText", "signalSummary"].indexOf(key) >= 0 ? "asc" : "desc";
+  }
+  renderWatchlist(currentWatchlistItems);
+}
+
+function compareWatchlistItems(a, b) {
+  const key = watchlistSortState.key;
+  if (!key) return 0;
+  const direction = watchlistSortState.direction === "desc" ? -1 : 1;
+  const numericKeys = ["close", "rsi14", "volumeRatio", "totalScore"];
+  if (numericKeys.indexOf(key) >= 0) {
+    const aBlank = a[key] === "" || a[key] === null || a[key] === undefined || !Number.isFinite(Number(a[key]));
+    const bBlank = b[key] === "" || b[key] === null || b[key] === undefined || !Number.isFinite(Number(b[key]));
+    if (aBlank !== bBlank) return aBlank ? 1 : -1;
+    return (Number(a[key]) - Number(b[key])) * direction;
+  }
+  const aText = String(a[key] || "").trim();
+  const bText = String(b[key] || "").trim();
+  if (!aText || !bText) {
+    if (!aText && !bText) return 0;
+    return !aText ? 1 : -1;
+  }
+  return aText.localeCompare(bText, "zh-Hant", { numeric: true, sensitivity: "base" }) * direction;
+}
+
+function updateWatchlistSortHeaders() {
+  document.querySelectorAll("[data-watch-sort]").forEach(button => {
+    const active = button.dataset.watchSort === watchlistSortState.key;
+    const direction = active ? watchlistSortState.direction : "";
+    button.dataset.direction = direction;
+    const th = button.closest("th");
+    if (th) th.setAttribute("aria-sort", active ? (direction === "desc" ? "descending" : "ascending") : "none");
+  });
 }
 
 async function loadPortfolio() {
@@ -1881,7 +1959,7 @@ Object.assign(pages, {
 
 window.addEventListener("DOMContentLoaded", () => {
   const detailButton = document.getElementById("btnLoadStockDetail");
-  if (detailButton) detailButton.addEventListener("click", loadStockDetailFromInput);
+  if (detailButton) detailButton.addEventListener("click", () => loadStockDetailFromInput(true));
   const detailInput = document.getElementById("stockDetailSymbol");
   if (detailInput) detailInput.addEventListener("keydown", event => {
     if (event.key === "Enter") loadStockDetailFromInput();
@@ -2117,7 +2195,7 @@ function renderStats(data) {
   document.getElementById("statsBody").innerHTML = fields.map(([label, key]) => renderKeyValueCard(label, data[key])).join("");
 }
 
-function loadStockDetailFromInput() {
+function loadStockDetailFromInput(forceRefresh = false) {
   const input = document.getElementById("stockDetailSymbol");
   const symbol = normalizeSymbolInput(input && input.value);
   if (!symbol) {
@@ -2125,20 +2203,21 @@ function loadStockDetailFromInput() {
     if (body) body.innerHTML = renderV11Empty("請輸入股票代號");
     return;
   }
-  return loadStockDetail(symbol);
+  return loadStockDetail(symbol, forceRefresh === true);
 }
 
-async function loadStockDetail(symbol) {
+async function loadStockDetail(symbol, forceRefresh = false) {
   symbol = normalizeSymbolInput(symbol);
+  if (forceRefresh) delete pageDataCache.stockDetail[symbol];
   const cached = pageDataCache.stockDetail[symbol];
   if (cached) renderStockDetail(cached);
   try {
-    const data = Api.getStockDetail ? await Api.getStockDetail(symbol) : await Api.getAnalysis(symbol);
+    const data = Api.getStockDetail ? await Api.getStockDetail(symbol, forceRefresh) : await Api.getAnalysis(symbol, forceRefresh);
     pageDataCache.stockDetail[symbol] = data;
     renderStockDetail(data);
   } catch (err) {
     try {
-      const fallback = await Api.getAnalysis(symbol);
+      const fallback = await Api.getAnalysis(symbol, forceRefresh);
       pageDataCache.stockDetail[symbol] = fallback;
       renderStockDetail(fallback);
     } catch (fallbackErr) {

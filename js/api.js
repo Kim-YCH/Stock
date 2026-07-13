@@ -76,7 +76,7 @@ const Api = (() => {
   return {
     isConfigured,
     getBackendVersion: () => getOnce("version"),
-    getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
+    getDashboard: (force = false) => getOnce("dashboard", { force: force ? "1" : undefined }, { force }),
     getStrategyModels: () => getOnce("strategyModels"),
     getCandidates: () => getOnce("candidates"),
     getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
@@ -88,7 +88,7 @@ const Api = (() => {
     getNotificationSummary: () => getOnce("notificationSummary"),
     markNotificationRead: (id) => jsonp("markNotificationRead", { id }),
     clearNotifications: () => jsonp("clearNotifications"),
-    getStockDetail: (symbol) => getOnce("stockDetail", { symbol }),
+    getStockDetail: (symbol, force = false) => getOnce("stockDetail", { symbol, force: force ? "1" : undefined }, { force }),
     getPaperSummary: () => getOnce("paperSummary"),
     createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
     togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),

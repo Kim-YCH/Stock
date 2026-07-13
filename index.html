@@ -8,14 +8,14 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=11.0" />
+  <link rel="stylesheet" href="css/style.css?v=11.4" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v11.0</div>
+        <div class="app-version" id="appVersion">前端 v11.4</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
@@ -88,13 +88,14 @@
             <table>
               <thead>
                 <tr>
-                  <th>股票</th>
-                  <th>收盤</th>
-                  <th>RSI</th>
-                  <th>量比</th>
-                  <th>分數</th>
-                  <th>狀態</th>
-                  <th>訊號</th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="symbol">股票</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="date">資料日</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="close">收盤</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="totalScore">分數</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="signalSummary">訊號</button></th>
                   <th>迷你線圖</th>
                   <th>操作</th>
                 </tr>
@@ -422,8 +423,8 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=11.0"></script>
-  <script src="js/api.js?v=11.0"></script>
-  <script src="js/app.js?v=11.0"></script>
+  <script src="js/config.js?v=11.4"></script>
+  <script src="js/api.js?v=11.4"></script>
+  <script src="js/app.js?v=11.4"></script>
 </body>
 </html>

@@ -658,3 +658,48 @@ Known Issues：
 - 新增 safeRun_、runDailyDerivedCaches 與 DashboardCache 清理機制。
 - 手機版固定保留五個底部入口，其餘功能收進更多選單，長列表使用載入更多。
 - 所有新增頁面具備 skeleton、局部錯誤與 stale cache fallback，不會造成整頁白畫面。
+
+### v11.1 Daily Quote Sync / Detail Cache / Watchlist Sort
+
+完成：
+
+- 每日盤後更新改為逐檔確認關注、庫存與交易標的，批次來源缺漏時自動用單股月資料補抓。
+- 更新結果新增 complete、staleSymbols 與 unresolvedSymbols，可辨識停牌、尚未發布或抓取失敗的個股。
+- 每日行情更新後立即重建 marketSummary、首頁 dashboard，並清除股票詳情舊快取。
+- 股票詳情重建時同步取得該股票最新 analysis，前端查詢支援 force refresh。
+- 前端每日更新與歷史回補後清除首頁、庫存、分析與股票詳情記憶快取，再強制讀取新版資料。
+- 今日市場在 TAIEX 歷史不足 60 筆時，改用 MA20、5 日報酬或當日漲跌判讀，不再一律顯示資料不足。
+- 首頁關注表新增資料日欄，並支援點擊股票、日期、價格、RSI、量比、分數、狀態與訊號表頭排序。
+
+### v11.2 TAIEX History Backfill
+
+完成：
+
+- 今日市場判讀前先檢查 MarketIndex 是否具備 60 個 TAIEX 交易日。
+- 歷史不足時透過 TWSE 發行量加權股價指數月資料自動回補，最多往回查 6 個月並在湊滿 60 筆後停止。
+- 回補只新增缺少日期，不覆蓋每日更新已寫入的最新漲跌與成交資訊。
+- 回補後優先使用 MA60 / MA20 完整判讀；官方資料仍不足時才依序降級為 MA20、5 日報酬與當日漲跌。
+- 新增 backfillMarketIndexHistory()，可在 Apps Script 編輯器手動執行並查看補抓筆數與錯誤。
+
+### v11.3 TWSE Quote Date / Stock Detail Repair
+
+完成：
+
+- 支援 TWSE OpenAPI 的緊湊民國日期格式（例如 1150709），不再把舊快照錯標成今日行情。
+- 全市場快照日期落後時，會改以單股月日資料取得真正的最近收盤價並覆寫同日錯誤價格。
+- analysis 單檔查詢在 Indicators 依股票分區儲存時，可精準讀取該股票資料，不再只看工作表最後 500 列。
+- analysis 即使暫時缺少 Indicators，也會用最新 Prices 提供日期與收盤價，不再回傳 close=0。
+- 股票詳情不再同步重建全市場候選排行，改讀現有候選快取，避免單檔查詢超過 Apps Script 執行時間。
+- getAnalysis 不再於頁面查詢時掃描並重算整張 Indicators，維持單檔快取讀取模式。
+
+### v11.4 Fast Daily Price Update
+
+完成：
+
+- 每日價格改以日期與股票代號定位，既有列直接覆寫，缺少列才批次新增，不再清空並重寫整張 Prices。
+- 測試資料清理在沒有命中資料時直接返回，不再每天無條件清空重寫 MarketIndex 與 Transactions。
+- 價格更新完成後只同步重算庫存與首頁快取，技術指標、分析快取、候選與研究資料改由三階段背景排程重建。
+- 每日更新後立即清除對應 analysis 與 stockDetail 舊快取，避免頁面沿用更新前價格。
+- 首頁關注表優先顯示 Prices 最新日期與收盤價；Indicators 尚在背景計算時也能先看到當日價格。
+- 前端更新按鈕不再要求同步強制重建 dashboard，核心價格完成後立即載入後端已產生的首頁快取。
+- 更新訊息區分新增與覆寫筆數，並顯示技術指標正在背景更新。
