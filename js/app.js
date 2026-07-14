@@ -60,21 +60,26 @@ const pages = {
   },
   analysis: {
     title: "線圖分析",
-    subtitle: "收盤價、平均成本與可勾選技術線",
+    subtitle: "線圖、技術指標、系統分析與持股交易",
     loader: () => {
       const symbol = normalizeSymbolInput(document.getElementById("analysisSymbol").value);
       if (symbol) loadAnalysis(symbol);
     }
-  },
-  transactions: {
-    title: "交易紀錄",
-    subtitle: "新增買進、賣出與股息",
-    loader: loadTransactions
   }
 };
 
+const PAGE_ROUTE_ALIASES = {
+  "candidate-ranking": "candidates",
+  leaderboard: "candidates",
+  transactions: "portfolio",
+  "stock-detail": "analysis",
+  stockDetail: "analysis",
+  paper: "dashboard",
+  "paper-trading": "dashboard"
+};
+
 const CACHE_KEYS = {
-  dashboard: "stocklab_cache_dashboard_v115",
+  dashboard: "stocklab_cache_dashboard_v116_daily_change",
   transactions: "stocklab_cache_transactions_v2"
 };
 const STRATEGY_MODELS_FALLBACK = [
@@ -171,6 +176,7 @@ let activeBacktestStrategyType = "";
 let topHistoricalBacktestStrategyType = "";
 let runtimeBackendVersion = "";
 let currentWatchlistItems = [];
+let portfolioTransactionsLoaded = false;
 const watchlistSortState = { key: "", direction: "asc" };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -207,6 +213,10 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("candidateSort").addEventListener("change", () => {
     renderCandidates(currentCandidateData);
   });
+  document.getElementById("candidateFilter").addEventListener("change", () => {
+    renderCandidates(currentCandidateData);
+    if (pageDataCache.candidateLeaderboard) renderCandidateLeaderboard(pageDataCache.candidateLeaderboard);
+  });
   document.getElementById("paperStrategyForm").addEventListener("submit", onCreatePaperStrategy);
   document.getElementById("btnRunPaper").addEventListener("click", onRunPaperTrading);
   document.getElementById("paperStrategies").addEventListener("change", onTogglePaperStrategy);
@@ -222,6 +232,12 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", onDocumentClick);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
+  document.getElementById("portfolioTransactionsDetails").addEventListener("toggle", event => {
+    if (event.currentTarget.open && !portfolioTransactionsLoaded) {
+      portfolioTransactionsLoaded = true;
+      loadTransactions();
+    }
+  });
   document.getElementById("backfillForm").addEventListener("submit", onBackfillHistoricalPrices);
 
   const dateInput = document.querySelector("input[name='date']");
@@ -232,7 +248,9 @@ document.addEventListener("DOMContentLoaded", () => {
   if (backtestStart) { const start = new Date(); start.setMonth(start.getMonth() - 6); backtestStart.valueAsDate = start; }
 
   setApiStatus();
-  loadDashboard();
+  const initialRoute = decodeURIComponent(String(window.location.hash || "").replace(/^#/, ""));
+  if (initialRoute) changePage(initialRoute, { replaceHash: true });
+  else loadDashboard();
 });
 
 
@@ -311,7 +329,10 @@ async function onBackfillHistoricalPrices(event) {
   try {
     const result = await Api.backfillHistoricalPrices(months, normalizedSymbols);
     invalidateFrontendQuoteCaches();
-    const resultText = `回補完成：抓到 ${result.fetched || 0} 筆，新增 ${result.inserted || 0}，更新 ${result.updated || 0}`;
+    const requestText = `API ${result.apiRequests || 0} 次，略過 ${result.skippedRequests || 0} 個已有月份`;
+    const resultText = result.noChanges
+      ? `${result.message || "回補完成：沒有缺漏資料"}（${requestText}）`
+      : `回補完成：補入 ${result.inserted || 0} 筆（${requestText}）`;
     setApiStatus(resultText);
     showToast(resultText, "success");
     message.textContent = resultText;
@@ -416,7 +437,7 @@ function clearPageMemoryCache() {
 }
 
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v11.5" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v11.6" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -646,9 +667,9 @@ async function onDocumentClick(event) {
   const stockButton = event.target.closest('[data-action="open-stock-detail"]');
   if (stockButton) {
     const symbol = normalizeSymbolInput(stockButton.dataset.symbol);
-    const input = document.getElementById("stockDetailSymbol");
+    const input = document.getElementById("analysisSymbol");
     if (input) input.value = symbol;
-    changePage("stockDetail");
+    changePage("analysis");
     return;
   }
   const notificationButton = event.target.closest('[data-action="mark-notification-read"]');
@@ -673,7 +694,7 @@ async function onDocumentClick(event) {
     let names = [];
     try { names = JSON.parse(decodeURIComponent(modelButton.dataset.models || "")); } catch (err) {}
     const container = modelButton.closest(".matched-models, .candidate-models");
-    if (container && names.length) container.innerHTML = names.map(name => `<span class="matched-model-tag">${escapeHtml(name)}</span>`).join("");
+    if (container && names.length) container.innerHTML = renderModelTags(names, names.length, modelButton.dataset.symbol || "");
     return;
   }
   const txBtn = event.target.closest('[data-action="delete-transaction"]');
@@ -719,8 +740,17 @@ async function onDocumentClick(event) {
   }
 }
 
-function changePage(pageName) {
-  if (!pages[pageName] || !document.getElementById(pageName + "Page")) return;
+function resolvePageName(pageName) {
+  const raw = String(pageName || "dashboard").replace(/^#/, "");
+  return PAGE_ROUTE_ALIASES[raw] || raw;
+}
+
+function changePage(pageName, options = {}) {
+  const requestedPage = String(pageName || "dashboard").replace(/^#/, "");
+  const openTransactions = requestedPage === "transactions";
+  const hiddenPaper = requestedPage === "paper" || requestedPage === "paper-trading";
+  pageName = resolvePageName(requestedPage);
+  if (!pages[pageName] || !document.getElementById(pageName + "Page")) pageName = "dashboard";
   closeMobileMore();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.page === pageName);
@@ -735,6 +765,23 @@ function changePage(pageName) {
   document.getElementById("pageSubtitle").textContent = pages[pageName].subtitle;
 
   pages[pageName].loader();
+  const targetHash = `#${pageName}`;
+  if (window.location.hash !== targetHash) {
+    if (options.replaceHash || requestedPage !== pageName) history.replaceState(null, "", targetHash);
+    else history.pushState(null, "", targetHash);
+  }
+  if (openTransactions) {
+    const details = document.getElementById("portfolioTransactionsDetails");
+    if (details) {
+      details.open = true;
+      if (!portfolioTransactionsLoaded) {
+        portfolioTransactionsLoaded = true;
+        loadTransactions();
+      }
+      setTimeout(() => details.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    }
+  }
+  if (hiddenPaper) showToast("虛擬交易目前暫時隱藏，可於後續版本重新啟用。", "warning");
 }
 
 let dashboardRetryTimer = null;
@@ -746,7 +793,7 @@ async function loadDashboard(options = {}) {
     setApiStatus("已載入快取，正在更新...");
   } else {
     renderSkeleton("marketCards", "summary", 6);
-    renderTableLoading("watchlistBody", 10, "首頁資料載入中");
+    renderTableLoading("watchlistBody", 11, "首頁資料載入中");
   }
 
   try {
@@ -786,7 +833,6 @@ function renderDashboard(data) {
 }
 
 async function loadCandidates() {
-  loadStrategyModels();
   const cached = pageDataCache.candidates;
   if (cached) {
     currentCandidateData = cached;
@@ -795,11 +841,27 @@ async function loadCandidates() {
     renderTableLoading("buyCandidatesBody", 9, "候選資料載入中");
     renderTableLoading("sellCandidatesBody", 12, "候選資料載入中");
   }
+  if (pageDataCache.candidateLeaderboard) renderCandidateLeaderboard(pageDataCache.candidateLeaderboard);
+  else {
+    renderSkeleton("leaderboardSummary", "summary", 4);
+    renderSkeleton("leaderboardBody", "list", 3);
+  }
   try {
-    const data = await Api.getCandidates();
+    const page = Api.getCandidatesPage
+      ? await Api.getCandidatesPage()
+      : await Api.getCandidates();
+    const data = page;
+    const leaderboard = page.leaderboard || buildLeaderboardFallback(page);
+    if (Array.isArray(page.models) && page.models.length) {
+      strategyModels = page.models;
+      strategyModelsLoaded = true;
+      renderStrategyModelSelectors();
+    }
     pageDataCache.candidates = data;
     currentCandidateData = data;
     renderCandidates(data);
+    pageDataCache.candidateLeaderboard = leaderboard || buildLeaderboardFallback(data);
+    renderCandidateLeaderboard(pageDataCache.candidateLeaderboard);
     setApiStatus("候選清單已更新");
   } catch (err) {
     if (!cached) {
@@ -812,12 +874,13 @@ async function loadCandidates() {
 
 function renderCandidates(data) {
   const sortMode = document.getElementById("candidateSort").value;
-  const buyItems = sortCandidateItems(data.buyCandidates || [], sortMode, false);
-  const sellItems = sortCandidateItems(data.sellCandidates || [], sortMode, true);
+  const buyItems = sortCandidateItems((data.buyCandidates || []).filter(candidateMatchesFilter), sortMode, false);
+  const sellItems = sortCandidateItems((data.sellCandidates || []).filter(candidateMatchesFilter), sortMode, true);
   const status = document.getElementById("candidateStatus");
   const strategyName = data.strategyName || "全模型候選";
   const modelCount = Number(data.modelCount || (data.models || strategyModels).length || 0);
   status.textContent = `盤後資料 ${data.dataDate || "尚未建立"} · ${strategyName}${modelCount ? ` ${modelCount} 個模型` : ""} · 買入 ${buyItems.length} 檔 · 賣出 ${sellItems.length} 檔 · 供下一交易日參考`;
+  buyItems.concat(sellItems).forEach(cacheExplainContext);
 
   document.getElementById("buyCandidatesBody").innerHTML = buyItems.length
     ? buyItems.map(item => `
@@ -825,11 +888,11 @@ function renderCandidates(data) {
           <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
           <td data-label="模型" class="candidate-models">${formatCandidateModels(item)}</td>
           <td data-label="收盤價">${number(item.close)}</td>
-          <td data-label="RSI">${number(item.rsi14)}</td>
-          <td data-label="技術分數">${number(item.totalScore)}</td>
-          <td data-label="風險分數">${number(item.riskScore)}</td>
-          <td data-label="狀態"><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
-          <td data-label="候選分數"><strong>${number(item.buyScore)}</strong></td>
+          <td data-label="RSI">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
+          <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
+          <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
+          <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
+          <td data-label="候選分數">${explainableButton("TECH_SCORE", `<strong>${number(item.buyScore)}</strong>`, item.symbol)}</td>
           <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
         </tr>
       `).join("")
@@ -847,10 +910,10 @@ function renderCandidates(data) {
             <td data-label="持有股數">${number(item.quantity)}</td>
             <td data-label="未實現損益" class="${pnlClass}">${money(item.unrealizedPnl)}</td>
             <td data-label="報酬率" class="${pnlClass}">${number(item.unrealizedRate)}%</td>
-            <td data-label="RSI">${number(item.rsi14)}</td>
-            <td data-label="技術分數">${number(item.totalScore)}</td>
-            <td data-label="風險分數">${number(item.riskScore)}</td>
-            <td data-label="候選分數"><strong>${number(item.sellScore)}</strong></td>
+            <td data-label="RSI">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
+            <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
+            <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
+            <td data-label="候選分數">${explainableButton("RISK_SCORE", `<strong>${number(item.sellScore)}</strong>`, item.symbol)}</td>
             <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
           </tr>
         `;
@@ -879,15 +942,15 @@ function formatCandidateModels(item) {
     : String(item.modelNames || item.strategyName || "").split(/[、,]/).map(name => name.trim()).filter(Boolean);
   const unique = Array.from(new Set(names));
   if (!unique.length) return escapeHtml("未標示");
-  return renderModelTags(unique, 2);
+  return renderModelTags(unique, 2, item.symbol);
 }
 
 function renderCandidateReasons(item) {
   const reasons = normalizeTextList(item.reasonList || item.reason);
   const risks = normalizeTextList(item.riskList);
   return `<details class="candidate-details"><summary>${escapeHtml(item.actionSuggestion || reasons[0] || "查看理由")}</summary>
-    ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
-    ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+    ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${explainableButton("CANDIDATE_REASON", escapeHtml(text), item.symbol, "candidate-reason-explain", "indicator", text)}</li>`).join("")}</ul>` : ""}
+    ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${explainableButton("RISK_SCORE", escapeHtml(text), item.symbol, "candidate-reason-explain", "indicator", text)}</li>`).join("")}</ul>` : ""}
   </details>`;
 }
 
@@ -908,6 +971,19 @@ function setupStrategyModelSelectors() {
   document.getElementById("btnSelectAllStrategies").addEventListener("click", () => setAllBacktestStrategies(true));
   document.getElementById("btnClearStrategies").addEventListener("click", () => setAllBacktestStrategies(false));
 
+}
+
+function candidateMatchesFilter(item) {
+  const select = document.getElementById("candidateFilter");
+  const mode = select ? select.value : "all";
+  if (mode === "all") return true;
+  const score = Number(item.confidenceScore || item.buyScore || item.sellScore || item.totalScore || 0);
+  const symbol = normalizeSymbolInput(item.symbol);
+  const isEtf = String(item.type || "").toUpperCase() === "ETF" || /^00\d{3,4}$/.test(symbol);
+  if (mode === "high") return score >= 80;
+  if (mode === "etf") return isEtf;
+  if (mode === "stock") return !isEtf;
+  return true;
 }
 
 async function loadStrategyModels() {
@@ -1319,9 +1395,9 @@ function renderMarketCards(data) {
   const marketSummary = dashboard.marketSummary || {};
   const marketState = dashboard.marketState || marketSummary.marketState || {};
   const taiex = items.find(item => item.symbol === "TAIEX") || marketSummary.taiex || {};
-  const bullish = dashboard.bullishSummary || marketSummary.bullishSummary || fallbackCountSummary(items, "BULL");
-  const risk = dashboard.riskSummary || marketSummary.riskSummary || fallbackCountSummary(items, "RISK");
-  const signals = dashboard.todaySignalSummary || { buyCount: 0, sellCount: 0, buyItems: [], sellItems: [] };
+  const bullish = getDashboardListSummary(dashboard, "bullish");
+  const risk = getDashboardListSummary(dashboard, "risk");
+  const signals = getDashboardSignalSummary(dashboard);
   const average = dashboard.averageScoreSummary || marketSummary.averageScoreSummary || { value: marketSummary.watchlistMarket && marketSummary.watchlistMarket.avgScore };
   const mode = marketState.marketMode || marketSummary.marketMode || taiex.trendText || "資料不足";
   const changePercent = Number(marketState.changePercent !== undefined ? marketState.changePercent : taiex.changePercent || 0);
@@ -1332,14 +1408,16 @@ function renderMarketCards(data) {
   const averageMeta = Number.isFinite(averageChange) && average.yesterdayValue !== "" && average.yesterdayValue !== undefined
     ? `昨日 ${number(average.yesterdayValue)} · ${averageChange > 0 ? "↑" : (averageChange < 0 ? "↓" : "→")} ${number(Math.abs(averageChange))}`
     : "滿分 100";
+  cacheExplainContext(Object.assign({ symbol: "TAIEX", marketMode: mode, trendText: mode }, taiex, marketState));
+  cacheExplainContext({ symbol: "MARKET_AVERAGE", totalScore: average.value, trendText: mode, marketMode: mode });
 
   container.innerHTML = [
-    dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷" }),
-    dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detail: buildMarketIndicatorLine(marketState, taiex) }),
+    dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷", explainKey: "MARKET_MODE", explainSymbol: "TAIEX" }),
+    dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detailHtml: buildMarketIndicatorLine(marketState, taiex) }),
     dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, cls: "up", meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
     dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "down" : "warn", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
     dashboardMetricCard({ title: "今日訊號", value: `買入 ${number(signals.buyCount)} · 賣出 ${number(signals.sellCount)}`, meta: "查看策略候選明細", action: "signals" }),
-    dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta })
+    dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta, explainKey: "TECH_SCORE", explainSymbol: "MARKET_AVERAGE" })
   ].join("");
 }
 
@@ -1347,8 +1425,9 @@ function dashboardMetricCard(options) {
   const content = `<div class="card-title">${escapeHtml(options.title || "")}</div>
     <div class="dashboard-card-value ${options.cls || ""}">${escapeHtml(String(options.value === undefined ? "-" : options.value))}</div>
     ${options.meta ? `<div class="dashboard-card-meta">${escapeHtml(options.meta)}</div>` : ""}
-    ${options.detail ? `<div class="dashboard-card-detail">${escapeHtml(options.detail)}</div>` : ""}
+    ${options.detailHtml ? `<div class="dashboard-card-detail dashboard-indicator-links">${options.detailHtml}</div>` : (options.detail ? `<div class="dashboard-card-detail">${escapeHtml(options.detail)}</div>` : "")}
     ${options.action ? '<div class="dashboard-card-link">查看詳細 →</div>' : ""}`;
+  if (options.explainKey) return `<button type="button" class="card dashboard-metric-card is-action explainable-card" data-explain-type="indicator" data-explain-key="${escapeHtml(options.explainKey)}" data-symbol="${escapeHtml(options.explainSymbol || "")}">${content}</button>`;
   if (!options.action) return `<article class="card dashboard-metric-card">${content}</article>`;
   return `<button type="button" class="card dashboard-metric-card is-action" data-action="open-dashboard-detail" data-detail-type="${escapeHtml(options.action)}">${content}</button>`;
 }
@@ -1358,14 +1437,80 @@ function fallbackCountSummary(items, symbol) {
   return { count: Number(item.close || 0), total: 0, rate: Number(item.changePercent || 0), items: [] };
 }
 
+function isBullishWatchItem(item) {
+  const score = Number(item && (item.totalScore ?? item.score) || 0);
+  const risk = Number(item && item.riskScore || 0);
+  const trend = String(item && (item.statusText || item.trendText || item.status) || "");
+  return ["強勢多頭", "偏多", "中性偏多"].some(label => trend.includes(label)) || (score >= 60 && risk >= 50);
+}
+
+function isRiskWatchItem(item) {
+  const riskValue = finiteValue(item && item.riskScore);
+  const score = Number(item && (item.totalScore ?? item.score) || 0);
+  const trend = String(item && (item.statusText || item.trendText || item.status) || "");
+  const rsi = Number(item && (item.rsi14 ?? item.rsi) || 0);
+  const macdHist = finiteValue(item && item.macdHist);
+  return (riskValue !== null && riskValue < 50) || score < 40 ||
+    ["偏弱", "偏空", "空頭"].some(label => trend.includes(label)) ||
+    rsi >= 75 || (macdHist !== null && macdHist < 0);
+}
+
+function getBullishItemsFromDashboard(data) {
+  const list = (data && (data.watchlist || data.items)) || [];
+  return list.filter(isBullishWatchItem);
+}
+
+function getRiskItemsFromDashboard(data) {
+  const list = (data && (data.watchlist || data.items)) || [];
+  return list.filter(isRiskWatchItem);
+}
+
+function getDashboardListSummary(data, type) {
+  const market = (data && data.marketSummary) || {};
+  const source = type === "bullish"
+    ? (data.bullishSummary || market.bullishSummary || {})
+    : (data.riskSummary || market.riskSummary || {});
+  const fallbackItems = type === "bullish" ? getBullishItemsFromDashboard(data) : getRiskItemsFromDashboard(data);
+  const items = Array.isArray(data && data.watchlist)
+    ? fallbackItems
+    : (Array.isArray(source.items) ? source.items : []);
+  const total = Number(source.total || ((data && data.watchlist) || []).length || 0);
+  const rate = total ? items.length / total * 100 : 0;
+  return Object.assign({}, source, { count: items.length, total, rate, items });
+}
+
+function getDashboardSignalSummary(data) {
+  const source = (data && data.todaySignalSummary) || {};
+  let buyItems = Array.isArray(source.buyItems) ? source.buyItems : [];
+  let sellItems = Array.isArray(source.sellItems) ? source.sellItems : [];
+  if ((!buyItems.length && !sellItems.length) && Array.isArray(source.items)) {
+    buyItems = source.items.filter(item => String(item.candidateType || item.signalSide || "").toUpperCase() === "BUY" || item.signalSide === "買入");
+    sellItems = source.items.filter(item => String(item.candidateType || item.signalSide || "").toUpperCase() === "SELL" || item.signalSide === "賣出");
+  }
+  return Object.assign({}, source, {
+    count: buyItems.length + sellItems.length,
+    buyCount: buyItems.length,
+    sellCount: sellItems.length,
+    buyItems,
+    sellItems,
+    items: buyItems.concat(sellItems)
+  });
+}
+
+function getDashboardWarningSummary(data) {
+  const source = (data && data.strategyWarnings) || {};
+  const items = Array.isArray(source.items) ? source.items : [];
+  return Object.assign({}, source, { count: items.length, total: items.length, items });
+}
+
 function buildMarketIndicatorLine(state, taiex) {
   const ma20 = state.ma20 !== undefined ? state.ma20 : taiex.ma20;
   const aboveMa20 = state.aboveMa20 !== undefined ? state.aboveMa20 : taiex.aboveMa20;
   const parts = [];
-  if (ma20 !== "" && ma20 !== undefined) parts.push(`MA20：${aboveMa20 ? "站上" : "跌破"}`);
-  if (state.rsi14 !== "" && state.rsi14 !== undefined) parts.push(`RSI：${number(state.rsi14)}`);
-  if (state.adx14 !== "" && state.adx14 !== undefined) parts.push(`ADX：${number(state.adx14)}`);
-  return parts.join(" · ");
+  if (ma20 !== "" && ma20 !== undefined) parts.push(explainableButton("MA20", `MA20：${aboveMa20 ? "站上" : "跌破"}`, "TAIEX", "dashboard-inline-explain"));
+  if (state.rsi14 !== "" && state.rsi14 !== undefined) parts.push(explainableButton("RSI", `RSI：${number(state.rsi14)}`, "TAIEX", "dashboard-inline-explain"));
+  if (state.adx14 !== "" && state.adx14 !== undefined) parts.push(explainableButton("ADX", `ADX：${number(state.adx14)}`, "TAIEX", "dashboard-inline-explain"));
+  return parts.join('<span aria-hidden="true">·</span>');
 }
 
 function riskStars(value) {
@@ -1397,6 +1542,7 @@ function renderWatchlist(items) {
   }
 
   tbody.innerHTML = visibleItems.map(item => {
+    cacheExplainContext(item);
     const statusText = dashboardStatusText(item);
     const badgeClass = getBadgeClass(statusText);
     const safeSymbol = escapeHtml(String(item.symbol || ""));
@@ -1406,18 +1552,26 @@ function renderWatchlist(items) {
     const adxValue = finiteValue(item.adx14);
     const atrValue = formatAtrPercent(item.atrPercent);
     const volumeValue = finiteValue(item.volumeRatio);
+    const previousClose = finiteValue(item.previousClose);
+    const priceChange = finiteValue(item.priceChange);
+    const changePercent = finiteValue(item.changePercent);
+    const changeClass = changePercent === null ? "" : (changePercent > 0 ? "up" : (changePercent < 0 ? "down" : ""));
+    const changeTitle = previousClose === null || priceChange === null || changePercent === null
+      ? "需要今日與昨日兩筆收盤價"
+      : `今日 ${number(item.close)} - 昨日 ${number(previousClose)} = ${signedNumber(priceChange)}（${signedNumber(changePercent)}%）`;
     const sparkStats = calcSparklineStats_(item.sparkline || item.trend || []);
     const sparkTitle = sparkStats.valid ? `近 20 日｜最高 ${number(sparkStats.high)}｜最低 ${number(sparkStats.low)}｜漲跌 ${signedNumber(sparkStats.changePercent)}%｜波動 ${number(sparkStats.rangePercent)}%` : "近 20 日資料不足";
     return `
       <tr>
-        <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)} · ${escapeHtml(item.date || "-")}</small></div></td>
-        <td data-label="技術分數"><strong class="score-value ${scoreClass(item.totalScore)}">${number(item.totalScore)}</strong></td>
-        <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
-        <td data-label="RSI"><span class="indicator-value ${rsiDirectionClass(item.rsiDirection)}">${number(item.rsi14)} ${rsiArrow}</span></td>
-        <td data-label="ADX"><span class="indicator-value ${adxClass(adxValue)}" title="${adxTitle(adxValue)}">${adxValue === null ? "-" : number(adxValue)}</span></td>
-        <td data-label="ATR%"><span class="indicator-value ${atrClass(atrValue)}" title="${atrTitle(atrValue)}">${atrValue === null ? "-" : number(atrValue) + "%"}</span></td>
-        <td data-label="量比"><span class="volume-ratio ${volumeRatioClass(volumeValue)}">${volumeValue === null ? "-" : number(volumeValue) + "x"}</span></td>
-        <td data-label="訊號"><div class="signal-chips">${renderSignalChips(signals)}</div></td>
+        <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)}</small></div></td>
+        <td data-label="漲跌幅"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
+        <td data-label="技術分數">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
+        <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(statusText), item.symbol, `badge ${badgeClass}`)}</td>
+        <td data-label="RSI">${explainableButton("RSI", `${number(item.rsi14)} ${rsiArrow}`, item.symbol, `indicator-value ${rsiDirectionClass(item.rsiDirection)}`)}</td>
+        <td data-label="ADX">${explainableButton("ADX", adxValue === null ? "-" : number(adxValue), item.symbol, `indicator-value ${adxClass(adxValue)}`)}</td>
+        <td data-label="ATR%">${explainableButton("ATR_PERCENT", atrValue === null ? "-" : number(atrValue) + "%", item.symbol, `indicator-value ${atrClass(atrValue)}`)}</td>
+        <td data-label="量比">${explainableButton("VOLUME_RATIO", volumeValue === null ? "-" : number(volumeValue) + "x", item.symbol, `volume-ratio ${volumeRatioClass(volumeValue)}`)}</td>
+        <td data-label="訊號"><div class="signal-chips signal-chip-row">${renderSignalChips(signals, item.symbol)}</div></td>
         <td data-label="迷你線圖" class="td-sparkline"><button class="sparkline-button" type="button" data-action="open-sparkline-stats" data-symbol="${safeSymbol}" title="${escapeHtml(sparkTitle)}">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</button></td>
         <td data-label="操作"><button class="danger-btn" type="button" data-action="remove-watchlist" data-symbol="${safeSymbol}" data-name="${safeName}">移除</button></td>
       </tr>
@@ -1514,27 +1668,51 @@ function buildSignalChips_(context) {
   const macdHist = finiteValue(context.macdHist);
   const bbPercentB = finiteValue(context.bbPercentB);
   const high20 = finiteValue(context.high20);
+  const low20 = finiteValue(context.low20);
   const adx = finiteValue(context.adx14);
+  const atr = formatAtrPercent(context.atrPercent);
   const volume = finiteValue(context.volumeRatio);
+  const vwap20 = finiteValue(context.vwap20);
+  const obv = finiteValue(context.obv);
+  const obvMa20 = finiteValue(context.obvMa20);
+  const mfi = finiteValue(context.mfi14);
+  const cci = finiteValue(context.cci20);
+  const williams = finiteValue(context.williamsR14);
+  const roc5 = finiteValue(context.roc5);
+  const superTrend = String(context.superTrendDirection || "").toUpperCase();
   const summary = String(context.signalSummary || "");
-  if (close !== null && ma20 !== null && close >= ma20) add("MA20");
-  if (close !== null && ma60 !== null && close >= ma60) add("MA60");
+  if (close !== null && ma20 !== null) add(close >= ma20 ? "MA20" : "跌破MA20");
+  if (close !== null && ma60 !== null) add(close >= ma60 ? "MA60" : "跌破MA60");
   if (rsi !== null && rsi > 70) add("RSI過熱");
   else if (rsi !== null && rsi > 50) add("RSI>50");
+  else if (rsi !== null && rsi < 30) add("RSI超賣");
+  else if (rsi !== null) add("RSI<=50");
   if (/KD.*金叉|KD金叉/.test(summary)) add("KD金叉");
   else if (/KD.*死叉|KD死叉/.test(summary)) add("KD死叉");
   else if (k9 !== null && d9 !== null) add(k9 >= d9 ? "KD金叉" : "KD死叉");
   if (macdHist !== null) add(macdHist >= 0 ? "MACD+" : "MACD-");
-  if (bbPercentB !== null && bbPercentB >= 0.2 && bbPercentB <= 0.8) add("布林健康");
+  if (bbPercentB !== null && bbPercentB >= 0.8) add("布林上緣");
+  else if (bbPercentB !== null && bbPercentB <= 0.2) add("布林下緣");
+  else if (bbPercentB !== null) add("布林健康");
   if (close !== null && high20 !== null && close >= high20) add("突破20高");
+  if (close !== null && low20 !== null && close <= low20) add("跌破20低");
   if (adx !== null && adx >= 25) add("ADX趨勢");
-  if (volume !== null && volume >= 1.5) add("量增");
+  if (volume !== null) add(volume >= 1.5 ? "量增" : (volume < 0.8 ? "量縮" : ""));
+  if (atr !== null) add(atr >= 5 ? "ATR高波動" : (atr < 2 ? "ATR低波動" : ""));
+  if (superTrend) add(superTrend === "UP" || superTrend.includes("多") ? "SuperTrend多方" : "SuperTrend空方");
+  if (close !== null && vwap20 !== null) add(close >= vwap20 ? "VWAP上方" : "VWAP下方");
+  if (obv !== null && obvMa20 !== null) add(obv >= obvMa20 ? "OBV轉強" : "OBV轉弱");
+  if (mfi !== null && mfi >= 80) add("MFI過熱");
+  else if (mfi !== null && mfi >= 50) add("MFI偏多");
+  if (cci !== null && cci >= 0) add("CCI轉強");
+  if (williams !== null && williams <= -80) add("Williams超賣");
+  if (roc5 !== null) add(roc5 >= 0 ? "ROC轉正" : "ROC轉負");
   return chips;
 }
 
-function renderSignalChips(chips) {
+function renderSignalChips(chips, symbol = "") {
   if (!chips || !chips.length) return '<span class="signal-empty">暫無</span>';
-  return chips.map(chip => `<span class="signal-chip">✓ ${escapeHtml(chip)}</span>`).join("");
+  return chips.map(chip => `<button type="button" class="explainable-chip signal-chip" data-explain-type="signal" data-explain-key="${escapeHtml(chip)}" data-symbol="${escapeHtml(normalizeSymbolInput(symbol))}">✓ ${escapeHtml(chip)}</button>`).join("");
 }
 
 function calcSparklineStats_(values) {
@@ -1558,7 +1736,7 @@ function signedNumber(value) {
 }
 
 function setWatchlistSort(key) {
-  const allowed = ["symbol", "date", "close", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore", "trendText", "signalSummary"];
+  const allowed = ["symbol", "date", "close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore", "trendText", "signalSummary"];
   if (allowed.indexOf(key) < 0) return;
   if (watchlistSortState.key === key) {
     watchlistSortState.direction = watchlistSortState.direction === "asc" ? "desc" : "asc";
@@ -1573,7 +1751,7 @@ function compareWatchlistItems(a, b) {
   const key = watchlistSortState.key;
   if (!key) return 0;
   const direction = watchlistSortState.direction === "desc" ? -1 : 1;
-  const numericKeys = ["close", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore"];
+  const numericKeys = ["close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore"];
   if (numericKeys.indexOf(key) >= 0) {
     const aBlank = a[key] === "" || a[key] === null || a[key] === undefined || !Number.isFinite(Number(a[key]));
     const bBlank = b[key] === "" || b[key] === null || b[key] === undefined || !Number.isFinite(Number(b[key]));
@@ -1644,6 +1822,7 @@ function renderPortfolioData(data) {
   `;
 
   document.getElementById("portfolioBody").innerHTML = items.map(item => {
+    cacheExplainContext(item);
     const pnlCls = Number(item.unrealizedPnl) >= 0 ? "up" : "down";
     return `
       <tr>
@@ -1654,9 +1833,9 @@ function renderPortfolioData(data) {
         <td data-label="市值">${money(item.marketValue)}</td>
         <td data-label="未實現損益" class="${pnlCls}">${money(item.unrealizedPnl)}</td>
         <td data-label="報酬率" class="${pnlCls}">${number(item.unrealizedRate)}%</td>
-        <td data-label="技術分數"><span class="${scoreClass(item.totalScore)}">${number(item.totalScore)}</span></td>
-        <td data-label="風險分數">${number(item.riskScore)}</td>
-        <td data-label="技術狀態"><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
+        <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
+        <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
+        <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
         <td data-label="資料日期">${escapeHtml(item.lastDate || data.dataDate || "-")}</td>
       </tr>
     `;
@@ -1691,9 +1870,11 @@ async function loadAnalysis(symbol, forceRefresh = false) {
   let request = analysisRequests.get(symbol);
   if (!request) {
     document.getElementById("mainChart").innerHTML = `<text x="40" y="80" fill="#94a3b8">線圖載入中...</text>`;
-    request = Api.getAnalysis(symbol, forceRefresh)
+    request = (Api.getStockDetail ? Api.getStockDetail(symbol, forceRefresh) : Api.getAnalysis(symbol, forceRefresh))
       .then(data => {
         analysisMemoryCache.set(symbol, data);
+        pageDataCache.analysis[symbol] = data;
+        pageDataCache.stockDetail[symbol] = data;
         return data;
       })
       .finally(() => {
@@ -1744,40 +1925,46 @@ function getSelectedAnalysisLines() {
 
 function renderAnalysis(data, symbol) {
   activeAnalysisData = data;
+  const context = cacheExplainContext(Object.assign({}, data, data.latest || {}));
   document.getElementById("analysisTitle").textContent =
     `${data.symbol || symbol} ${data.name || ""} 線圖分析`;
 
   const latest = data.latest || {};
   const portfolio = data.portfolio || {};
   const cards = [
-    ["收盤價", formatMetricNumber(latest.close, "")],
-    ["MA20", formatMetricNumber(latest.ma20)],
-    ["MA60", formatMetricNumber(latest.ma60)],
-    ["RSI14", formatMetricNumber(latest.rsi14)],
-    ["KD", formatMetricPair(latest.k9, latest.d9)],
-    ["布林 %B", formatMetricNumber(latest.bbPercentB)],
-    ["ATR %", formatMetricPercent(latest.atrPercent)],
-    ["ADX14", formatMetricNumber(latest.adx14)],
-    ["EMA20", formatMetricNumber(latest.ema20)],
-    ["VWAP20", formatMetricNumber(latest.vwap20)],
-    ["OBV / OBV MA20", formatMetricPair(latest.obv, latest.obvMa20)],
-    ["MFI14", formatMetricNumber(latest.mfi14)],
-    ["CCI20", formatMetricNumber(latest.cci20)],
-    ["Williams %R", formatMetricNumber(latest.williamsR14)],
-    ["ROC5 / ROC20", formatMetricPair(latest.roc5, latest.roc20)],
-    ["SuperTrend", latest.superTrendDirection || formatMetricNumber(latest.superTrend)],
-    ["Donchian 上 / 下", formatMetricPair(latest.donchianHigh20, latest.donchianLow20)],
-    ["20 日高 / 低", formatMetricPair(latest.high20, latest.low20)],
-    ["技術分數", formatMetricNumber(latest.totalScore)],
-    ["風險分數", formatMetricNumber(latest.riskScore)],
-    ["技術狀態", latest.trendText || "觀察"],
-    ["平均成本", formatMetricNumber(portfolio.avgCost, "無庫存")]
+    ["收盤價", formatMetricNumber(latest.close, ""), ""],
+    ["MA20", formatMetricNumber(latest.ma20), "MA20"],
+    ["MA60", formatMetricNumber(latest.ma60), "MA60"],
+    ["RSI14", formatMetricNumber(latest.rsi14), "RSI"],
+    ["KD", formatMetricPair(latest.k9, latest.d9), "KD"],
+    ["MACD 柱狀體", formatMetricNumber(latest.macdHist), "MACD_HIST"],
+    ["布林 %B", formatMetricNumber(latest.bbPercentB), "BB_PERCENT_B"],
+    ["ATR %", formatMetricPercent(latest.atrPercent), "ATR_PERCENT"],
+    ["ADX14", formatMetricNumber(latest.adx14), "ADX"],
+    ["EMA20", formatMetricNumber(latest.ema20), "EMA20"],
+    ["VWAP20", formatMetricNumber(latest.vwap20), "VWAP20"],
+    ["OBV / OBV MA20", formatMetricPair(latest.obv, latest.obvMa20), "OBV"],
+    ["MFI14", formatMetricNumber(latest.mfi14), "MFI"],
+    ["CCI20", formatMetricNumber(latest.cci20), "CCI"],
+    ["Williams %R", formatMetricNumber(latest.williamsR14), "WILLIAMS_R"],
+    ["ROC5 / ROC20", formatMetricPair(latest.roc5, latest.roc20), "ROC20"],
+    ["SuperTrend", latest.superTrendDirection || formatMetricNumber(latest.superTrend), "SUPER_TREND"],
+    ["Donchian 上 / 下", formatMetricPair(latest.donchianHigh20, latest.donchianLow20), "DONCHIAN"],
+    ["20 日高 / 低", formatMetricPair(latest.high20, latest.low20), "HIGH20"],
+    ["技術分數", formatMetricNumber(latest.totalScore), "TECH_SCORE"],
+    ["趨勢分數", formatMetricNumber(latest.trendScore), "TREND_SCORE"],
+    ["動能分數", formatMetricNumber(latest.momentumScore), "MOMENTUM_SCORE"],
+    ["風險分數", formatMetricNumber(latest.riskScore), "RISK_SCORE"],
+    ["突破分數", formatMetricNumber(latest.breakoutScore), "BREAKOUT_SCORE"],
+    ["波動分數", formatMetricNumber(latest.volatilityScore), "VOLATILITY_SCORE"],
+    ["技術狀態", latest.trendText || "觀察", "TREND_TEXT"],
+    ["平均成本", formatMetricNumber(portfolio.avgCost, "無庫存"), ""]
   ];
 
-  document.getElementById("indicatorCards").innerHTML = cards.map(([label, value]) => `
+  document.getElementById("indicatorCards").innerHTML = cards.map(([label, value, key]) => `
     <div class="metric">
       <div class="label">${label}</div>
-      <div class="num ${value === "尚未計算" || value === "無庫存" ? "num-muted" : ""}">${escapeHtml(String(value ?? ""))}</div>
+      ${key ? explainableButton(key, escapeHtml(String(value ?? "")), context.symbol || symbol, `num ${value === "尚未計算" || value === "無庫存" ? "num-muted" : ""}`) : `<div class="num ${value === "尚未計算" || value === "無庫存" ? "num-muted" : ""}">${escapeHtml(String(value ?? ""))}</div>`}
     </div>
   `).join("");
 
@@ -1788,11 +1975,12 @@ function renderAnalysis(data, symbol) {
   document.getElementById("signalsBox").innerHTML = signals.length
     ? signals.map(s => `
         <div class="signal ${signalClass(s.direction)}">
-          <strong>${escapeHtml(s.date || "")} ${escapeHtml(s.signalName || "")}</strong>
+          <strong>${escapeHtml(s.date || "")} ${explainableButton(String(s.signalName || s.signalType || "技術訊號"), escapeHtml(s.signalName || s.signalType || "技術訊號"), context.symbol || symbol, "signal-name-explain", "signal", s.note || "")}</strong>
           <div class="muted">${escapeHtml(s.note || "")}</div>
         </div>
       `).join("")
     : `<div class="muted">目前沒有近期訊號。</div>`;
+  renderStockDetail(data);
 }
 
 function hasMetricValue(value) {
@@ -1892,6 +2080,8 @@ async function onSubmitTransaction(event) {
   delete payload.action;
   payload.market = "TW";
   payload.currency = "TWD";
+  payload.fee = 0;
+  payload.tax = 0;
   payload.symbol = normalizeSymbolInput(payload.symbol);
 
   const message = document.getElementById("formMessage");
@@ -2292,22 +2482,14 @@ const paginationState = {
 };
 
 Object.assign(pages, {
-  leaderboard: { title: "候選排行", subtitle: "買進與賣出候選依信心、風險與模型命中排序", loader: loadCandidateLeaderboard },
   market: { title: "市場總覽", subtitle: "大盤、廣度、關注清單與風險模式", loader: loadMarketSummary },
   strategyResearch: { title: "策略研究", subtitle: "彙整策略模型的回測表現與適用情境", loader: loadStrategyResearch },
   strategyHealth: { title: "策略健康", subtitle: "用近期回測與虛擬交易觀察模型穩定度", loader: loadStrategyHealthPage },
   notifications: { title: "通知中心", subtitle: "候選、風險、策略與資料更新提醒", loader: loadNotifications },
-  stats: { title: "統計中心", subtitle: "資料列、交易、策略與候選摘要", loader: loadStats },
-  stockDetail: { title: "股票詳情", subtitle: "單一股票的技術、候選與持倉摘要", loader: loadStockDetailFromInput }
+  stats: { title: "統計中心", subtitle: "資料列、交易、策略與候選摘要", loader: loadStats }
 });
 
 window.addEventListener("DOMContentLoaded", () => {
-  const detailButton = document.getElementById("btnLoadStockDetail");
-  if (detailButton) detailButton.addEventListener("click", () => loadStockDetailFromInput(true));
-  const detailInput = document.getElementById("stockDetailSymbol");
-  if (detailInput) detailInput.addEventListener("keydown", event => {
-    if (event.key === "Enter") loadStockDetailFromInput();
-  });
   const clearButton = document.getElementById("btnClearNotifications");
   if (clearButton) clearButton.addEventListener("click", clearV11Notifications);
   const notificationButton = document.getElementById("btnNotificationCenter");
@@ -2322,6 +2504,7 @@ window.addEventListener("DOMContentLoaded", () => {
   if (moreBacktestRuns) moreBacktestRuns.addEventListener("click", () => loadBacktestRuns({ append: true }));
   const mobileMore = document.getElementById("btnMobileMore");
   if (mobileMore) mobileMore.addEventListener("click", openMobileMore);
+  window.addEventListener("hashchange", () => changePage(window.location.hash, { replaceHash: true }));
   buildMobileMoreLinks();
   loadNotificationSummary();
 });
@@ -2384,7 +2567,8 @@ function buildLeaderboardFallback(source) {
 
 function renderCandidateLeaderboard(data) {
   const items = Array.isArray(data.items) ? data.items : [];
-  const ranked = items.slice().sort((a, b) => Number(b.confidenceScore || b.buyScore || b.sellScore || b.totalScore || 0) - Number(a.confidenceScore || a.buyScore || a.sellScore || a.totalScore || 0));
+  const ranked = items.filter(candidateMatchesFilter).slice().sort((a, b) => Number(b.confidenceScore || b.buyScore || b.sellScore || b.totalScore || 0) - Number(a.confidenceScore || a.buyScore || a.sellScore || a.totalScore || 0));
+  ranked.forEach(cacheExplainContext);
   document.getElementById("leaderboardSummary").innerHTML = [
     summaryCard("買進候選", ranked.filter(x => String(x.candidateType).toUpperCase() === "BUY").length, ""),
     summaryCard("賣出候選", ranked.filter(x => String(x.candidateType).toUpperCase() === "SELL").length, ""),
@@ -2401,13 +2585,13 @@ function renderV11CandidateCard(item, rank) {
   const risks = normalizeTextList(item.riskList);
   return `<article class="v11-card">
     <div class="v11-card-head"><strong>${number(item.rank || rank)}. ${renderStockLink(item.symbol, item.name)}</strong><span class="pill ${type === "SELL" ? "danger" : ""}">${type === "SELL" ? "賣出" : "買進"}</span></div>
-    <div class="v11-score"><span>${number(score)}</span><small>${escapeHtml(item.gradeText || scoreToGradeText(score))} · ${renderStars(item.stars || scoreToStars(score))}</small></div>
-    <div class="matched-models">${renderModelTags(item.matchedModelNames || item.matchedModels || item.strategyName, 2)}</div>
-    <div class="v11-meta">收盤 ${number(item.close)} · RSI ${number(item.rsi14)} · 風險 ${number(item.riskScore)}</div>
+    <div class="v11-score">${explainableButton("TECH_SCORE", `<span>${number(score)}</span><small>${escapeHtml(item.gradeText || scoreToGradeText(score))} · ${renderStars(item.stars || scoreToStars(score))}</small>`, item.symbol, scoreClass(score))}</div>
+    <div class="matched-models">${renderModelTags(item.matchedModelNames || item.matchedModels || item.strategyName, 2, item.symbol)}</div>
+    <div class="v11-meta">收盤 ${number(item.close)} · ${explainableButton("RSI", `RSI ${number(item.rsi14)}`, item.symbol)} · ${explainableButton("RISK_SCORE", `風險 ${number(item.riskScore)}`, item.symbol)}</div>
     <div class="candidate-action">${escapeHtml(item.actionSuggestion || "")}</div>
     <details class="candidate-details"><summary>查看理由與風險</summary>
-      ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
-      ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+      ${reasons.length ? `<ul class="v11-reasons">${reasons.map(text => `<li>${explainableButton("CANDIDATE_REASON", escapeHtml(text), item.symbol, "candidate-reason-explain", "indicator", text)}</li>`).join("")}</ul>` : ""}
+      ${risks.length ? `<ul class="v11-risk-list">${risks.map(text => `<li>${explainableButton("RISK_SCORE", escapeHtml(text), item.symbol, "candidate-reason-explain", "indicator", text)}</li>`).join("")}</ul>` : ""}
     </details>
   </article>`;
 }
@@ -2421,16 +2605,18 @@ function renderMarketSummary(data) {
   const breadth = data.breadth || {};
   const watch = data.watchlistMarket || {};
   const sectors = data.sectorProxy || {};
+  cacheExplainContext(Object.assign({ symbol: "TAIEX", marketMode: data.marketMode || taiex.trendText, trendText: data.marketMode || taiex.trendText }, taiex));
+  cacheExplainContext({ symbol: "MARKET_AVERAGE", totalScore: watch.avgScore, marketMode: data.marketMode || taiex.trendText });
   document.getElementById("marketSummaryCards").innerHTML = [
     summaryCard("TAIEX", number(taiex.close), Number(taiex.change) >= 0 ? "up" : "down"),
-    summaryCard("大盤模式", escapeHtml(data.marketMode || taiex.trendText || "-"), ""),
+    summaryCard("大盤模式", explainableButton("MARKET_MODE", escapeHtml(data.marketMode || taiex.trendText || "-"), "TAIEX"), ""),
     summaryCard("上漲比率", number(breadth.upRatio) + "%", Number(breadth.upRatio) >= 50 ? "up" : "down"),
-    summaryCard("關注均分", number(watch.avgScore), "")
+    summaryCard("關注均分", explainableButton("TECH_SCORE", number(watch.avgScore), "MARKET_AVERAGE"), "")
   ].join("");
   document.getElementById("marketSummaryBody").innerHTML = `
     <div class="v11-card"><strong>${escapeHtml(data.summaryText || "尚無市場摘要")}</strong><p>${escapeHtml(data.riskText || "")}</p></div>
     <div class="v11-grid compact">
-      ${renderKeyValueCard("TAIEX MA20 / MA60", `${number(taiex.ma20)} / ${number(taiex.ma60)}`)}
+      <div class="v11-card key-value"><span>TAIEX MA20 / MA60</span><strong>${explainableButton("MA20", number(taiex.ma20), "TAIEX")} / ${explainableButton("MA60", number(taiex.ma60), "TAIEX")}</strong></div>
       ${renderKeyValueCard("強勢 / 弱勢", `${number(breadth.strongCount)} / ${number(breadth.weakCount)}`)}
       ${renderKeyValueCard("過熱 / 超跌", `${number(breadth.overheatCount)} / ${number(breadth.oversoldCount)}`)}
       ${renderKeyValueCard("Risk On", data.marketRiskOn ? "是" : "否")}
@@ -2543,17 +2729,6 @@ function renderStats(data) {
   document.getElementById("statsBody").innerHTML = fields.map(([label, key]) => renderKeyValueCard(label, data[key])).join("");
 }
 
-function loadStockDetailFromInput(forceRefresh = false) {
-  const input = document.getElementById("stockDetailSymbol");
-  const symbol = normalizeSymbolInput(input && input.value);
-  if (!symbol) {
-    const body = document.getElementById("stockDetailBody");
-    if (body) body.innerHTML = renderV11Empty("請輸入股票代號");
-    return;
-  }
-  return loadStockDetail(symbol, forceRefresh === true);
-}
-
 async function loadStockDetail(symbol, forceRefresh = false) {
   symbol = normalizeSymbolInput(symbol);
   if (forceRefresh) delete pageDataCache.stockDetail[symbol];
@@ -2576,45 +2751,57 @@ async function loadStockDetail(symbol, forceRefresh = false) {
 
 function renderStockDetail(data) {
   if (!data || data.ok === false) {
-    showPageError("stockDetailBody", new Error((data && data.message) || "股票詳細資料讀取失敗"));
+    showPageError("analysisDetailBody", new Error((data && data.message) || "股票詳細資料讀取失敗"));
     return;
   }
   const latest = data.latest || data.indicator || {};
   const candidate = data.candidate || {};
   const portfolio = data.portfolio || {};
-  document.getElementById("stockDetailTitle").textContent = `${data.symbol || ""} ${data.name || ""} 股票詳情`;
+  const symbol = normalizeSymbolInput(data.symbol || latest.symbol);
+  cacheExplainContext(Object.assign({}, data, latest));
   const technicalFields = [
-    ["收盤價", latest.close || data.close], ["MA5 / MA20 / MA60", [latest.ma5, latest.ma20, latest.ma60].map(number).join(" / ")],
-    ["RSI14", latest.rsi14], ["MACD Histogram", latest.macdHist], ["KD", `${number(latest.k9)} / ${number(latest.d9)}`],
-    ["布林 %B", latest.bbPercentB], ["ATR %", latest.atrPercent], ["ADX", latest.adx14], ["OBV", latest.obv],
-    ["MFI14", latest.mfi14], ["CCI20", latest.cci20], ["Williams %R", latest.williamsR14],
-    ["ROC 5 / 20", `${number(latest.roc5)}% / ${number(latest.roc20)}%`],
-    ["SuperTrend", `${latest.superTrendDirection || "-"} ${number(latest.superTrend)}`],
-    ["Donchian 20", `${number(latest.donchianLow20)} / ${number(latest.donchianHigh20)}`]
+    ["MA5", latest.ma5, "MA5"], ["MA20", latest.ma20, "MA20"], ["MA60", latest.ma60, "MA60"],
+    ["EMA5", latest.ema5, "EMA5"], ["EMA10", latest.ema10, "EMA10"], ["EMA20", latest.ema20, "EMA20"], ["EMA60", latest.ema60, "EMA60"],
+    ["RSI14", latest.rsi14, "RSI"], ["K9", latest.k9, "K9"], ["D9", latest.d9, "D9"],
+    ["MACD", latest.macd, "MACD"], ["MACD Histogram", latest.macdHist, "MACD_HIST"],
+    ["布林 %B", latest.bbPercentB, "BB_PERCENT_B"], ["布林寬度", latest.bbWidth, "BB_WIDTH"],
+    ["ATR", latest.atr14 || latest.atr, "ATR"], ["ATR %", formatMetricPercent(latest.atrPercent), "ATR_PERCENT"],
+    ["ADX", latest.adx14, "ADX"], ["+DI", latest.plusDI14, "PLUS_DI"], ["-DI", latest.minusDI14, "MINUS_DI"],
+    ["Bias20", latest.bias20, "BIAS20"], ["量比", latest.volumeRatio, "VOLUME_RATIO"], ["VWAP20", latest.vwap20, "VWAP20"],
+    ["OBV", latest.obv, "OBV"], ["MFI14", latest.mfi14, "MFI"], ["CCI20", latest.cci20, "CCI"],
+    ["Williams %R", latest.williamsR14, "WILLIAMS_R"], ["ROC5", latest.roc5, "ROC5"], ["ROC20", latest.roc20, "ROC20"],
+    ["SuperTrend", `${latest.superTrendDirection || "-"} ${number(latest.superTrend)}`, "SUPER_TREND"],
+    ["Donchian 20", `${number(latest.donchianLow20)} / ${number(latest.donchianHigh20)}`, "DONCHIAN"],
+    ["20 日高點", latest.high20, "HIGH20"], ["20 日低點", latest.low20, "LOW20"],
+    ["技術分數", latest.totalScore, "TECH_SCORE"], ["趨勢分數", latest.trendScore, "TREND_SCORE"],
+    ["動能分數", latest.momentumScore, "MOMENTUM_SCORE"], ["風險分數", latest.riskScore, "RISK_SCORE"],
+    ["突破分數", latest.breakoutScore, "BREAKOUT_SCORE"], ["波動分數", latest.volatilityScore, "VOLATILITY_SCORE"]
   ];
-  const signals = Array.isArray(data.signals) ? data.signals : [];
   const transactions = Array.isArray(data.transactions) ? data.transactions : [];
   const backtests = Array.isArray(data.backtestResults) ? data.backtestResults : [];
-  document.getElementById("stockDetailBody").innerHTML = `
-    <section><h3>技術狀態</h3><div class="v11-grid compact">${technicalFields.map(field => renderKeyValueCard(field[0], field[1])).join("")}</div></section>
+  const signalChips = buildSignalChips_(latest);
+  document.getElementById("analysisDetailBody").innerHTML = `
+    <section class="panel"><div class="panel-header"><div><h2>指標詳細資料</h2><div class="muted">點擊任一指標查看白話說明與目前數值原因。</div></div></div>
+      <div class="signal-chip-row">${renderSignalChips(signalChips, symbol)}</div>
+      <div class="v11-grid compact technical-detail-grid">${technicalFields.map(([label, value, key]) => `<div class="v11-card key-value"><span>${escapeHtml(label)}</span>${explainableButton(key, escapeHtml(value === undefined || value === null || value === "" ? "-" : (typeof value === "number" ? number(value) : value)), symbol)}</div>`).join("")}</div>
+    </section>
     <section class="v11-card"><strong>系統分析</strong><p>${escapeHtml(data.analysisText || "尚無分析文字")}</p></section>
     <section class="v11-card"><div class="v11-card-head"><strong>候選狀態</strong><span class="pill">${escapeHtml(candidate.candidateType || "未入選")}</span></div>
-      <p>信心 ${number(candidate.confidenceScore)} · ${escapeHtml(candidate.gradeText || "-")} · ${escapeHtml(candidate.actionSuggestion || "")}</p>
-      <div class="matched-models">${renderModelTags(candidate.matchedModelNames || candidate.matchedModels, 3)}</div>
-      ${normalizeTextList(candidate.reasonList).length ? `<ul class="v11-reasons">${normalizeTextList(candidate.reasonList).map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : ""}
+      <p>${explainableButton("TECH_SCORE", `信心 ${number(candidate.confidenceScore)}`, symbol)} · ${escapeHtml(candidate.gradeText || "-")} · ${escapeHtml(candidate.actionSuggestion || "")}</p>
+      <div class="matched-models">${renderModelTags(candidate.matchedModelNames || candidate.matchedModels, 3, symbol)}</div>
+      ${normalizeTextList(candidate.reasonList).length ? `<ul class="v11-reasons">${normalizeTextList(candidate.reasonList).map(text => `<li>${explainableButton("CANDIDATE_REASON", escapeHtml(text), symbol, "candidate-reason-explain", "indicator", text)}</li>`).join("")}</ul>` : ""}
     </section>
     <section class="v11-card"><strong>持倉</strong><p>${data.isHeld ? "目前持有" : "目前未持有"} · 股數 ${number(portfolio.quantity)} · 平均成本 ${number(portfolio.avgCost)} · 未實現損益 ${money(portfolio.unrealizedPnl)} (${number(portfolio.unrealizedRate)}%)</p></section>
-    <section><h3>最近訊號</h3><div class="v11-list">${signals.map(item => `<div class="v11-card"><strong>${escapeHtml(item.date || "")} ${escapeHtml(item.signalName || item.signalType || "")}</strong><p>${escapeHtml(item.note || "")}</p></div>`).join("") || renderV11Empty("尚無近期訊號")}</div></section>
     <section><h3>最近交易</h3><div class="v11-list">${transactions.map(item => `<div class="v11-card"><strong>${escapeHtml(item.date || "")} ${escapeHtml(item.action || "")}</strong><p>${number(item.quantity)} 股 · ${number(item.price)} · ${escapeHtml(item.note || "")}</p></div>`).join("") || renderV11Empty("尚無交易紀錄")}</div></section>
     <section><h3>最近回測</h3><div class="v11-grid">${backtests.map(item => `<div class="v11-card"><strong>${escapeHtml(item.runId || "回測")}</strong><p>勝率 ${number(item.winRate)}% · 報酬 ${number(item.totalReturn)}% · PF ${number(item.profitFactor)}</p></div>`).join("") || renderV11Empty("尚無近期回測結果")}</div></section>`;
 }
 
-function renderModelTags(models, maxVisible = 2) {
+function renderModelTags(models, maxVisible = 2, symbol = "") {
   const names = normalizeTextList(models).filter(Boolean);
   if (!names.length) return '<span class="matched-model-tag">未命中模型</span>';
-  const visible = names.slice(0, maxVisible).map(name => `<span class="matched-model-tag">${escapeHtml(name)}</span>`);
+  const visible = names.slice(0, maxVisible).map(name => `<button type="button" class="matched-model-tag explainable-chip" data-explain-type="indicator" data-explain-key="STRATEGY_MODEL" data-explain-note="${escapeHtml(name)}" data-symbol="${escapeHtml(normalizeSymbolInput(symbol))}">${escapeHtml(name)}</button>`);
   const hidden = names.length - visible.length;
-  if (hidden > 0) visible.push(`<button type="button" class="matched-model-tag more" data-action="expand-model-tags" data-models="${escapeHtml(encodeURIComponent(JSON.stringify(names)))}">+${hidden}</button>`);
+  if (hidden > 0) visible.push(`<button type="button" class="matched-model-tag more" data-action="expand-model-tags" data-symbol="${escapeHtml(normalizeSymbolInput(symbol))}" data-models="${escapeHtml(encodeURIComponent(JSON.stringify(names)))}">+${hidden}</button>`);
   return visible.join("");
 }
 
@@ -2751,7 +2938,7 @@ function renderDashboardV11Summary(data) {
   if (!container) return;
   const market = data.marketSummary || {};
   const narrative = data.marketNarrative || market.narrative;
-  const warnings = data.strategyWarnings || { count: 0, items: [] };
+  const warnings = getDashboardWarningSummary(data);
   if (!narrative && !warnings.count) {
     container.innerHTML = "";
     return;
@@ -2766,7 +2953,7 @@ function renderDashboardV11Summary(data) {
     </div>
     <p>${escapeHtml((narrative && narrative.summaryText) || market.summaryText || "")}</p>
     ${(narrative && narrative.suggestionText) || market.riskText ? `<p class="market-suggestion">${escapeHtml((narrative && narrative.suggestionText) || market.riskText || "")}</p>` : ""}
-    <div class="reason-chips">${reasonList.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}</div>
+    <div class="reason-chips">${reasonList.map(reason => explainableButton("CANDIDATE_REASON", escapeHtml(reason), "TAIEX", "reason-chip-explain", "indicator", reason)).join("")}</div>
   </section>`;
 }
 
@@ -2774,9 +2961,9 @@ function buildMobileMoreLinks() {
   const container = document.getElementById("mobileMoreLinks");
   if (!container) return;
   const links = [
-    ["leaderboard", "候選排行"], ["market", "市場分析"], ["strategyResearch", "策略研究"],
+    ["market", "市場分析"], ["strategyResearch", "策略研究"],
     ["strategyHealth", "策略健康"], ["notifications", "通知中心"], ["stats", "統計中心"],
-    ["transactions", "交易紀錄"], ["analysis", "線圖分析"], ["paper", "虛擬交易"], ["stockDetail", "股票詳細"]
+    ["analysis", "線圖分析"]
   ];
   container.innerHTML = links.map(([page, label]) => `<button type="button" data-action="open-page" data-page="${page}">${label}</button>`).join("");
 }
@@ -2797,30 +2984,43 @@ function closeMobileMore() {
 
 function openDashboardDetail(type) {
   const data = currentDashboardData || getCachedDashboard() || {};
-  const market = data.marketSummary || {};
   let title = "詳細清單";
   let items = [];
   let kind = type;
   if (type === "bullish") {
     title = "偏多股票清單";
-    items = ((data.bullishSummary || market.bullishSummary || {}).items || []);
+    items = getDashboardListSummary(data, "bullish").items;
   } else if (type === "risk") {
     title = "風險提醒清單";
-    items = ((data.riskSummary || market.riskSummary || {}).items || []);
+    items = getDashboardListSummary(data, "risk").items;
   } else if (type === "warnings") {
     title = "策略警告清單";
-    items = ((data.strategyWarnings || {}).items || []);
+    items = getDashboardWarningSummary(data).items;
   } else if (type === "signals") {
     title = "今日訊號清單";
-    const summary = data.todaySignalSummary || {};
-    items = (summary.buyItems || []).map(item => Object.assign({ signalSide: "買入" }, item))
-      .concat((summary.sellItems || []).map(item => Object.assign({ signalSide: "賣出" }, item)));
+    const summary = getDashboardSignalSummary(data);
+    const buyItems = summary.buyItems.map(item => Object.assign({ signalSide: "買入" }, item));
+    const sellItems = summary.sellItems.map(item => Object.assign({ signalSide: "賣出" }, item));
+    const sellEmpty = Number(summary.sellTotal || 0) > 0 ? "目前持股沒有賣出訊號" : "目前沒有庫存，因此沒有賣出訊號";
+    const body = `<div class="dashboard-signal-groups">
+      <section><h3>買入訊號</h3>${renderDashboardDetailItems(buyItems, kind, "目前沒有買入訊號")}</section>
+      <section><h3>賣出訊號</h3>${renderDashboardDetailItems(sellItems, kind, sellEmpty)}</section>
+    </div>`;
+    openDashboardDetailSheet(title, body);
+    return;
   }
-  openDashboardDetailSheet(title, renderDashboardDetailItems(items, kind));
+  openDashboardDetailSheet(title, renderDashboardDetailItems(items, kind, dashboardDetailEmptyMessage(type)));
 }
 
-function renderDashboardDetailItems(items, kind) {
-  if (!items || !items.length) return renderV11Empty("目前沒有符合條件的股票");
+function dashboardDetailEmptyMessage(type) {
+  if (type === "bullish") return "目前沒有偏多股票";
+  if (type === "risk") return "目前沒有風險提醒";
+  if (type === "warnings") return "目前沒有策略警告";
+  return "目前沒有符合條件的股票";
+}
+
+function renderDashboardDetailItems(items, kind, emptyMessage) {
+  if (!items || !items.length) return renderV11Empty(emptyMessage || "目前沒有符合條件的股票");
   return `<div class="detail-list">${items.map(item => {
     const reasons = normalizeTextList(item.reasonList || item.message || item.reason || item.warningType);
     const status = item.trendText || item.statusText || item.signalSide || item.title || "";

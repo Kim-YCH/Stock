@@ -8,31 +8,27 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="stylesheet" href="css/style.css?v=11.4" />
+  <link rel="stylesheet" href="css/style.css?v=11.6" />
 </head>
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v11.5</div>
+        <div class="app-version" id="appVersion">前端 v11.6</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="dashboard">首頁總覽</button>
         <button class="nav-btn" data-page="candidates">候選清單</button>
-        <button class="nav-btn" data-page="leaderboard">候選排行</button>
         <button class="nav-btn" data-page="market">市場總覽</button>
         <button class="nav-btn" data-page="strategyResearch">策略研究</button>
         <button class="nav-btn" data-page="strategyHealth">策略健康</button>
         <button class="nav-btn" data-page="notifications">通知中心</button>
         <button class="nav-btn" data-page="stats">統計中心</button>
-        <button class="nav-btn" data-page="stockDetail">股票詳情</button>
-        <button class="nav-btn" data-page="paper">虛擬交易</button>
         <button class="nav-btn" data-page="backtest">策略回測</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
         <button class="nav-btn" data-page="analysis">線圖分析</button>
-        <button class="nav-btn" data-page="transactions">交易紀錄</button>
         <button class="nav-btn mobile-more-btn" id="btnMobileMore" type="button">更多</button>
       </nav>
     </aside>
@@ -89,6 +85,7 @@
               <thead>
                 <tr>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="symbol">股票</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="changePercent">漲跌幅</button></th>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
@@ -121,9 +118,23 @@
                 <option value="return">報酬率高到低</option>
               </select>
             </label>
+            <label class="candidate-sort">篩選
+              <select id="candidateFilter">
+                <option value="all">全部候選</option>
+                <option value="high">高信心</option>
+                <option value="etf">ETF</option>
+                <option value="stock">個股</option>
+              </select>
+            </label>
           </div>
         </div>
         <div id="candidateStrategyInfo" class="strategy-model-info candidate-model-info"></div>
+
+        <div id="leaderboardSummary" class="grid-4"></div>
+        <div class="panel candidate-section">
+          <div class="panel-header"><div><h2>候選排行榜</h2><div class="muted">買進與賣出候選依信心分數、風險與模型命中排序。</div></div></div>
+          <div id="leaderboardBody" class="v11-grid"></div>
+        </div>
 
         <div class="panel candidate-section">
           <div class="panel-header">
@@ -183,14 +194,6 @@
         </div>
       </section>
 
-      <section id="leaderboardPage" class="page">
-        <div id="leaderboardSummary" class="grid-4"></div>
-        <div class="panel">
-          <div class="panel-header"><div><h2>候選排行</h2><div class="muted">買進與賣出候選依信心分數、風險與模型命中排序。</div></div></div>
-          <div id="leaderboardBody" class="v11-grid"></div>
-        </div>
-      </section>
-
       <section id="marketPage" class="page">
         <div id="marketSummaryCards" class="grid-4"></div>
         <div class="panel"><h2>市場摘要</h2><div id="marketSummaryBody" class="v11-list"></div></div>
@@ -218,15 +221,6 @@
         <div class="panel"><h2>系統統計</h2><div id="statsBody" class="v11-grid"></div></div>
       </section>
 
-      <section id="stockDetailPage" class="page">
-        <div class="panel">
-          <div class="panel-header">
-            <div><h2 id="stockDetailTitle">股票詳情</h2><div class="muted">輸入台股代號查看技術、候選理由與持倉摘要。</div></div>
-            <div class="inline-form"><input id="stockDetailSymbol" type="text" inputmode="numeric" placeholder="2330 或 006208" /><button id="btnLoadStockDetail" type="button">查詢</button></div>
-          </div>
-          <div id="stockDetailBody" class="v11-list"></div>
-        </div>
-      </section>
       <section id="paperPage" class="page">
         <div class="notice-band">
           可選擇不同技術指標模型進行每日虛擬買賣。策略只做模擬，不會產生真實交易，也不代表未來績效。
@@ -288,6 +282,21 @@
       </section>
 
       <section id="portfolioPage" class="page">
+        <div class="panel">
+          <div class="panel-header">
+            <div><h2>快速買賣</h2><div class="muted">交易會先顯示於畫面，再由後端背景更新庫存。</div></div>
+          </div>
+          <form id="transactionForm" class="form-grid portfolio-trade-form">
+            <label>類型<select name="action"><option value="BUY">買進</option><option value="SELL">賣出</option></select></label>
+            <label>股票代號<input name="symbol" type="text" inputmode="numeric" required placeholder="2330" /></label>
+            <label>股數<input name="quantity" type="number" step="0.0001" min="0.0001" required /></label>
+            <label>價格<input name="price" type="number" step="0.0001" min="0.0001" required /></label>
+            <label>日期<input name="date" type="date" required /></label>
+            <label>備註<input name="note" placeholder="長期投資 / 短線觀察" /></label>
+            <div class="form-actions full"><button type="submit">新增交易</button><span id="formMessage" class="muted"></span></div>
+          </form>
+        </div>
+
         <div id="portfolioSummary" class="grid-4"></div>
 
         <div class="panel">
@@ -318,43 +327,49 @@
             </table>
           </div>
         </div>
+
+        <details id="portfolioTransactionsDetails" class="panel disclosure-panel">
+          <summary><span>最近交易紀錄</span><small>展開後才載入</small></summary>
+          <div class="disclosure-content">
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>日期</th><th>類型</th><th>股票</th><th>股數</th><th>價格</th><th>手續費</th><th>稅</th><th>備註</th><th>操作</th></tr></thead>
+                <tbody id="transactionsBody"></tbody>
+              </table>
+            </div>
+            <div class="list-actions"><button id="btnLoadMoreTransactions" type="button" hidden>載入更多</button></div>
+          </div>
+        </details>
       </section>
 
       <section id="analysisPage" class="page">
         <div class="panel">
           <div class="panel-header">
-            <div>
-              <h2 id="analysisTitle">線圖分析</h2>
-
-            </div>
-
+            <div><h2 id="analysisTitle">線圖分析</h2><div class="muted">輸入台股代號查看線圖、指標、系統分析、持股與交易。</div></div>
             <div class="inline-form">
               <input id="analysisSymbol" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 006208" />
               <button id="btnLoadAnalysis">查詢</button>
               <button id="btnRefreshAnalysis" type="button">重新整理</button>
             </div>
           </div>
-
-          <div class="analysis-layout">
-            <div>
-              <div class="chart-wrap">
-                <svg id="mainChart" viewBox="0 0 920 420" preserveAspectRatio="none"></svg>
-                <div id="chartTooltip" class="chart-tooltip" hidden></div>
-              </div>
-
-              <div class="legend">
-                <span class="legend-item price-line">收盤價</span>
-                <span class="legend-item cost-line">平均成本</span>
-              </div>
-              <div id="analysisLineControls" class="line-controls"></div>
-              <div id="analysisDataNotice" class="analysis-notice" hidden></div>
-            </div>
-
-            <aside>
-              <div id="indicatorCards" class="metric-grid"></div>
-            </aside>
-          </div>
         </div>
+
+        <div class="panel analysis-chart-panel">
+          <div class="chart-wrap">
+            <svg id="mainChart" viewBox="0 0 920 420" preserveAspectRatio="none"></svg>
+            <div id="chartTooltip" class="chart-tooltip" hidden></div>
+          </div>
+          <div class="legend"><span class="legend-item price-line">收盤價</span><span class="legend-item cost-line">平均成本</span></div>
+          <div id="analysisLineControls" class="line-controls"></div>
+          <div id="analysisDataNotice" class="analysis-notice" hidden></div>
+        </div>
+
+        <div class="panel">
+          <h2>技術摘要</h2>
+          <div id="indicatorCards" class="metric-grid"></div>
+        </div>
+
+        <div id="analysisDetailBody" class="analysis-detail-sections"></div>
 
         <div class="panel">
           <h2>近期技術訊號</h2>
@@ -362,60 +377,6 @@
         </div>
       </section>
 
-      <section id="transactionsPage" class="page">
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <h2>新增交易</h2>
-              <div class="muted">先支援 BUY / SELL / DIVIDEND</div>
-            </div>
-          </div>
-
-          <form id="transactionForm" class="form-grid">
-            <label>日期<input name="date" type="date" required /></label>
-            <label>類型
-              <select name="action">
-                <option value="BUY">買進 BUY</option>
-                <option value="SELL">賣出 SELL</option>
-                <option value="DIVIDEND">股息 DIVIDEND</option>
-              </select>
-            </label>
-            <label>股票代號<input name="symbol" type="text" inputmode="numeric" required placeholder="2330" /></label>
-            <label>股數<input name="quantity" type="number" step="0.0001" required /></label>
-            <label>價格<input name="price" type="number" step="0.0001" required /></label>
-            <label>手續費<input name="fee" type="number" step="0.0001" value="0" /></label>
-            <label>稅<input name="tax" type="number" step="0.0001" value="0" /></label>
-            <label class="full">備註<input name="note" placeholder="長期投資 / 短線觀察" /></label>
-            <div class="form-actions full">
-              <button type="submit">新增交易</button>
-              <span id="formMessage" class="muted"></span>
-            </div>
-          </form>
-        </div>
-
-        <div class="panel">
-          <h2>交易紀錄</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th>類型</th>
-                  <th>股票</th>
-                  <th>股數</th>
-                  <th>價格</th>
-                  <th>手續費</th>
-                  <th>稅</th>
-                  <th>備註</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody id="transactionsBody"></tbody>
-            </table>
-          </div>
-          <div class="list-actions"><button id="btnLoadMoreTransactions" type="button" hidden>載入更多</button></div>
-        </div>
-      </section>
     </main>
   </div>
 
@@ -454,10 +415,22 @@
     </section>
   </div>
 
+  <div id="indicatorExplainModal" class="explain-modal" hidden>
+    <button class="explain-modal-backdrop" type="button" data-action="close-indicator-explain" aria-label="關閉指標說明"></button>
+    <section class="explain-modal-panel" role="dialog" aria-modal="true" aria-labelledby="indicatorExplainTitle">
+      <header class="explain-modal-header">
+        <div><div id="indicatorExplainKicker" class="explain-modal-kicker">指標說明</div><h3 id="indicatorExplainTitle">技術指標</h3></div>
+        <button class="icon-button modal-close" type="button" data-action="close-indicator-explain" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <div id="indicatorExplainBody" class="explain-modal-body explanation-text"></div>
+    </section>
+  </div>
+
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script src="js/config.js?v=11.5"></script>
-  <script src="js/api.js?v=11.5"></script>
-  <script src="js/app.js?v=11.5"></script>
+  <script src="js/config.js?v=11.6"></script>
+  <script src="js/api.js?v=11.6"></script>
+  <script src="js/indicator-explain.js?v=11.6"></script>
+  <script src="js/app.js?v=11.6"></script>
 </body>
 </html>

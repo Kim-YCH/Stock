@@ -79,6 +79,7 @@ const Api = (() => {
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getStrategyModels: () => getOnce("strategyModels"),
     getCandidates: () => getOnce("candidates"),
+    getCandidatesPage: () => getOnce("candidatesPage"),
     getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
     getMarketSummary: () => getOnce("marketSummary"),
     getStrategyResearch: () => getOnce("strategyResearch"),
