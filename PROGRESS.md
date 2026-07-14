@@ -703,3 +703,26 @@ Known Issues：
 - 首頁關注表優先顯示 Prices 最新日期與收盤價；Indicators 尚在背景計算時也能先看到當日價格。
 - 前端更新按鈕不再要求同步強制重建 dashboard，核心價格完成後立即載入後端已產生的首頁快取。
 - 更新訊息區分新增與覆寫筆數，並顯示技術指標正在背景更新。
+
+### v11.5 Dashboard UX / Frontend-first Trading / Performance Pass
+
+完成：
+
+- 首頁重新整理為今日市場、TAIEX、偏多股票、風險提醒、今日訊號與平均技術分數六個主要資訊區塊。
+- 今日市場加入 MA20、RSI、ADX、市場模式與判讀理由；偏多、風險與策略警告可開啟桌面詳情視窗或手機底部面板。
+- 關注清單補上技術分數、五級狀態、RSI 方向、ADX、ATR%、量比、訊號 chips 與可點擊的 20 日小圖統計。
+- 交易新增與刪除改為 optimistic UI，前端立即更新；Apps Script 完成寫入後才由背景排程重算庫存與衍生快取。
+- 庫存先顯示快取資料與資料日期；偵測到交易後待重算狀態時，自動執行明確的庫存更新 API。
+- 每日更新不再顯示確認視窗；歷史回補改為非阻塞式面板，送出後可繼續瀏覽其他頁面。
+- 前端版本更新只清除 StockLab 記憶快取、更新 Service Worker 並重新載入，不呼叫行情或分析重 API。
+- 初始載入只讀 runtime version、dashboard 與通知摘要；策略模型、候選、回測、虛擬交易與長列表在進入頁面後才延遲載入。
+- 虛擬交易與回測執行紀錄加入載入更多，保留既有 request de-duplication、page cache、stale-while-refresh 與分階段衍生重建。
+- 手機版資訊卡、模型標籤、訊號 chips、關注表格與詳情底部面板完成窄螢幕排列與點擊尺寸調整。
+- 前後端版本更新為 v11.5；Apps Script 維持本機 untracked 私有檔，不納入 Git commit。
+
+Known Issues：
+
+- Apps Script v11.5 後端需由擁有者重新部署 Web App，正式站才會使用背景交易重算與新版首頁資料。
+- MarketIndex 目前只保存收盤價，大盤 ADX 暫以收盤價序列估算趨勢強度；加入 OHLC 欄位後可改用標準計算。
+- 舊 Indicators 列若尚未產生 ADX、ATR 或前一日 RSI，首頁會保留空白而不顯示推測值，待背景重算後補齊。
+- LINE 通知尚未串接，本版維持站內通知。

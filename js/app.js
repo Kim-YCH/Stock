@@ -74,8 +74,8 @@ const pages = {
 };
 
 const CACHE_KEYS = {
-  dashboard: "stocklab_dashboard_cache_v10",
-  transactions: "stocklab_transactions_cache_v1"
+  dashboard: "stocklab_cache_dashboard_v115",
+  transactions: "stocklab_cache_transactions_v2"
 };
 const STRATEGY_MODELS_FALLBACK = [
   {
@@ -143,6 +143,7 @@ const STRATEGY_MODELS_FALLBACK = [
   }
 ];
 let strategyModels = STRATEGY_MODELS_FALLBACK.slice();
+let strategyModelsLoaded = false;
 const STRATEGY_CHART_COLORS = ["#38bdf8", "#22c55e", "#f59e0b", "#f472b6", "#a78bfa", "#14b8a6", "#fb7185", "#84cc16", "#eab308", "#94a3b8", "#22d3ee", "#cbd5e1"];
 const analysisMemoryCache = new Map();
 const analysisRequests = new Map();
@@ -162,6 +163,7 @@ const ANALYSIS_LINE_OPTIONS = [
 ];
 const analysisLineState = Object.fromEntries(ANALYSIS_LINE_OPTIONS.map(option => [option.key, option.default === true]));
 let activeAnalysisSymbol = "";
+let currentDashboardData = null;
 let activeAnalysisData = null;
 let currentCandidateData = Mock.candidates;
 let currentBacktestResults = [];
@@ -212,7 +214,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("backtestComparisonBody").addEventListener("click", onBacktestComparisonClick);
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
-  document.getElementById("btnBackfillHistory").addEventListener("click", onBackfillHistoricalPrices);
+  document.getElementById("btnBackfillHistory").addEventListener("click", openBackfillSheet);
   document.getElementById("btnRefreshVersion").addEventListener("click", refreshAppVersion);
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
   document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
@@ -220,6 +222,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", onDocumentClick);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
+  document.getElementById("backfillForm").addEventListener("submit", onBackfillHistoricalPrices);
 
   const dateInput = document.querySelector("input[name='date']");
   if (dateInput) dateInput.valueAsDate = new Date();
@@ -264,9 +267,13 @@ async function onUpdateDailyPrices() {
     const derivedText = result.derivedSchedule && result.derivedSchedule.ok
       ? "，技術指標背景更新中"
       : "";
-    setApiStatus(`價格更新完成：新增 ${result.inserted || 0}，覆寫 ${result.updated || 0}${marketText}${staleText}${derivedText}`);
+    const successText = `更新完成：資料日期 ${result.dataDate || "待背景確認"}，新增 ${result.inserted || 0}，覆寫 ${result.updated || 0}${marketText}${staleText}${derivedText}`;
+    setApiStatus(successText);
+    showToast(successText, "success");
   } catch (err) {
-    setApiStatus("更新失敗：" + err.message);
+    const errorText = "更新失敗：" + err.message;
+    setApiStatus(errorText);
+    showToast(errorText, "error");
   } finally {
     btn.disabled = false;
     btn.textContent = oldText;
@@ -274,77 +281,76 @@ async function onUpdateDailyPrices() {
 }
 
 
-async function onBackfillHistoricalPrices() {
+async function onBackfillHistoricalPrices(event) {
+  event.preventDefault();
   const btn = document.getElementById("btnBackfillHistory");
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  const message = document.getElementById("backfillMessage");
   if (!Api.isConfigured()) {
-    setApiStatus("尚未設定 API_BASE_URL，無法回補歷史資料");
+    message.textContent = "尚未設定 API_BASE_URL，無法回補歷史資料";
     return;
   }
 
-  const monthsText = prompt("要回補最近幾個月？\n建議先填 12。股票很多時可先填 6。", "12");
-  if (monthsText === null) return;
-
-  const months = Number(monthsText || 12);
+  const data = Object.fromEntries(new FormData(form).entries());
+  const months = Number(data.months || 12);
   if (!Number.isFinite(months) || months <= 0) {
-    setApiStatus("回補月份格式錯誤");
+    message.textContent = "回補月份格式錯誤";
     return;
   }
-
-  const symbols = prompt("要指定股票代號嗎？\n空白 = 回補 Stocks / Watchlist / Portfolio 全部股票。\n範例：2330,2317,006208", "");
-  if (symbols === null) return;
-  const normalizedSymbols = normalizeSymbolListInput(symbols);
+  const normalizedSymbols = normalizeSymbolListInput(data.symbols || "");
 
   btn.disabled = true;
+  submitButton.disabled = true;
   const oldText = btn.textContent;
   btn.textContent = "回補中...";
+  submitButton.textContent = "回補中...";
+  message.textContent = "正在讀取官方歷史資料，請勿關閉頁面";
   setApiStatus(`正在回補最近 ${months} 個月歷史資料`);
 
   try {
     const result = await Api.backfillHistoricalPrices(months, normalizedSymbols);
     invalidateFrontendQuoteCaches();
-    setApiStatus(`回補完成：抓到 ${result.fetched || 0} 筆，新增 ${result.inserted || 0}，更新 ${result.updated || 0}`);
-    await loadDashboard({ force: true });
+    const resultText = `回補完成：抓到 ${result.fetched || 0} 筆，新增 ${result.inserted || 0}，更新 ${result.updated || 0}`;
+    setApiStatus(resultText);
+    showToast(resultText, "success");
+    message.textContent = resultText;
+    await loadDashboard();
   } catch (err) {
-    setApiStatus("回補失敗：" + err.message);
+    const errorText = "回補失敗：" + err.message;
+    setApiStatus(errorText);
+    showToast(errorText, "error");
+    message.textContent = errorText;
   } finally {
     btn.disabled = false;
+    submitButton.disabled = false;
     btn.textContent = oldText;
+    submitButton.textContent = "開始回補";
   }
 }
 
 async function refreshAppVersion() {
-  const confirmed = confirm("要重新載入最新版本嗎？");
-  if (!confirmed) return;
-
+  showToast("正在重新載入最新版...");
   try {
-    setApiStatus("正在更新版本...");
-
-    if ("caches" in window) {
-      const keys = await caches.keys();
-      await Promise.all(keys.map(key => caches.delete(key)));
-    }
+    clearPageMemoryCache();
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith("stocklab_")) localStorage.removeItem(key);
+    });
 
     if ("serviceWorker" in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
-
-      for (const registration of registrations) {
-        if (registration.update) {
-          await registration.update();
-        }
-      }
+      await Promise.all(registrations.map(registration => registration.update().catch(() => null)));
     }
-
-    reloadWithVersionStamp();
   } catch (error) {
-    console.error(error);
-    reloadWithVersionStamp();
+    console.warn("refresh version cleanup failed", error);
   }
+  reloadWithVersionStamp();
 }
 
 function reloadWithVersionStamp() {
   const url = new URL(window.location.href);
   url.searchParams.set("v", Date.now().toString());
-  window.location.href = url.toString();
+  window.location.replace(url.toString());
 }
 
 function setApiStatus(message) {
@@ -401,8 +407,16 @@ function invalidateFrontendQuoteCaches() {
   clearCache(CACHE_KEYS.dashboard);
 }
 
+function clearPageMemoryCache() {
+  analysisMemoryCache.clear();
+  analysisRequests.clear();
+  Object.keys(pageDataCache).forEach(key => {
+    pageDataCache[key] = key === "analysis" || key === "stockDetail" ? {} : null;
+  });
+}
+
 function getAppVersion() {
-  return typeof APP_VERSION === "undefined" ? "v11.4" : APP_VERSION;
+  return typeof APP_VERSION === "undefined" ? "v11.5" : APP_VERSION;
 }
 
 function setAppVersionLabel() {
@@ -473,6 +487,14 @@ function removeCachedTransaction(id) {
   const cached = getCachedTransactions();
   if (!cached) return;
   cached.items = (cached.items || []).filter(item => String(item.id || "") !== String(id));
+  pageDataCache.transactions = cached;
+  saveTransactionsCache(cached);
+  renderTransactions(cached.items);
+}
+
+function replaceCachedTransaction(id, nextItem) {
+  const cached = pageDataCache.transactions || getCachedTransactions() || { ok: true, items: [] };
+  cached.items = (cached.items || []).map(item => String(item.id || "") === String(id) ? Object.assign({}, item, nextItem) : item);
   pageDataCache.transactions = cached;
   saveTransactionsCache(cached);
   renderTransactions(cached.items);
@@ -594,6 +616,24 @@ async function onDocumentClick(event) {
     setWatchlistSort(sortButton.dataset.watchSort);
     return;
   }
+  if (event.target.closest('[data-action="close-dashboard-detail"]')) {
+    closeDashboardDetail();
+    return;
+  }
+  if (event.target.closest('[data-action="close-backfill"]')) {
+    closeBackfillSheet();
+    return;
+  }
+  const dashboardDetailButton = event.target.closest('[data-action="open-dashboard-detail"]');
+  if (dashboardDetailButton) {
+    openDashboardDetail(dashboardDetailButton.dataset.detailType || "");
+    return;
+  }
+  const sparklineButton = event.target.closest('[data-action="open-sparkline-stats"]');
+  if (sparklineButton) {
+    openSparklineStats(sparklineButton.dataset.symbol || "");
+    return;
+  }
   if (event.target.closest('[data-action="close-mobile-more"]')) {
     closeMobileMore();
     return;
@@ -641,6 +681,16 @@ async function onDocumentClick(event) {
     await onDeleteTransaction(txBtn);
     return;
   }
+  const retryTransactionButton = event.target.closest('[data-action="retry-pending-transaction"]');
+  if (retryTransactionButton) {
+    await retryPendingTransaction(retryTransactionButton.dataset.id || "");
+    return;
+  }
+  const removePendingButton = event.target.closest('[data-action="remove-pending-transaction"]');
+  if (removePendingButton) {
+    removeCachedTransaction(removePendingButton.dataset.id || "");
+    return;
+  }
 
   const btn = event.target.closest('[data-action="remove-watchlist"]');
   if (!btn) return;
@@ -661,7 +711,7 @@ async function onDocumentClick(event) {
     setApiStatus("已移除關注股票");
     pageDataCache.dashboard = null;
     clearCache(CACHE_KEYS.dashboard);
-    await loadDashboard({ force: true });
+    await loadDashboard();
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
   } finally {
@@ -695,7 +745,7 @@ async function loadDashboard(options = {}) {
     renderDashboard(cached);
     setApiStatus("已載入快取，正在更新...");
   } else {
-    renderSkeleton("marketCards", "summary", 4);
+    renderSkeleton("marketCards", "summary", 6);
     renderTableLoading("watchlistBody", 10, "首頁資料載入中");
   }
 
@@ -723,18 +773,20 @@ async function loadDashboard(options = {}) {
 }
 
 function renderDashboard(data) {
+  currentDashboardData = data || null;
   const lastRun = data.lastRun || {};
   const dataDate = data.dataDate || lastRun.dataDate || "";
   const updatedAt = data.updatedAt || lastRun.finishedAt || lastRun.updatedAt || "";
   setBackendVersionLabel(runtimeBackendVersion || data.version || lastRun.version || "");
 
   renderUpdateStatus(updatedAt, dataDate, data.version, lastRun);
-  renderMarketCards(data.market || []);
+  renderMarketCards(data);
   renderDashboardV11Summary(data);
   renderWatchlist(data.watchlist || []);
 }
 
 async function loadCandidates() {
+  loadStrategyModels();
   const cached = pageDataCache.candidates;
   if (cached) {
     currentCandidateData = cached;
@@ -856,15 +908,16 @@ function setupStrategyModelSelectors() {
   document.getElementById("btnSelectAllStrategies").addEventListener("click", () => setAllBacktestStrategies(true));
   document.getElementById("btnClearStrategies").addEventListener("click", () => setAllBacktestStrategies(false));
 
-  loadStrategyModels();
 }
 
 async function loadStrategyModels() {
+  if (strategyModelsLoaded) return;
   if (!Api.isConfigured() || typeof Api.getStrategyModels !== "function") return;
   try {
     const data = await Api.getStrategyModels();
     if (data && Array.isArray(data.items) && data.items.length) {
       strategyModels = data.items;
+      strategyModelsLoaded = true;
       renderStrategyModelSelectors();
     }
   } catch (err) {
@@ -948,20 +1001,34 @@ function updateStrategyModelInfo(selectId, targetId) {
     <div><b>賣出：</b>${escapeHtml(model.sellSummary || "")}</div>`;
 }
 
-async function loadPaperSummary() {
+async function loadPaperSummary(options = {}) {
+  loadStrategyModels();
+  const state = paginationState.paperTrades;
+  if (state.loading) return;
+  const append = options.append === true;
+  if (!append) state.offset = 0;
   const dashboard = getCachedDashboard();
   const symbolInput = document.querySelector("#paperStrategyForm input[name='symbols']");
   if (symbolInput && !symbolInput.value && dashboard && dashboard.watchlist) symbolInput.value = dashboard.watchlist.map(item => normalizeSymbolInput(item.symbol)).filter(Boolean).join(",");
-  if (pageDataCache.paperSummary) renderPaperSummary(pageDataCache.paperSummary);
-  else renderSkeleton("paperSummaryCards", "summary", 4);
+  if (pageDataCache.paperSummary && !append) renderPaperSummary(pageDataCache.paperSummary);
+  else if (!append) renderSkeleton("paperSummaryCards", "summary", 4);
+  state.loading = true;
+  updateLoadMoreButton("btnLoadMorePaperTrades", false, true);
   try {
-    const data = await Api.getPaperSummary();
-    pageDataCache.paperSummary = data;
-    renderPaperSummary(data);
+    const data = await Api.getPaperSummary({ limit: state.limit, offset: state.offset });
+    const previousTrades = append && pageDataCache.paperSummary ? pageDataCache.paperSummary.trades || [] : [];
+    const merged = Object.assign({}, data, { trades: previousTrades.concat(data.trades || []) });
+    pageDataCache.paperSummary = merged;
+    state.offset = merged.trades.length;
+    state.hasMore = Boolean(data.hasMore);
+    renderPaperSummary(merged);
     setApiStatus("虛擬交易資料已更新");
   } catch (err) {
     if (!pageDataCache.paperSummary) renderPaperSummary(Mock.paper);
     setApiStatus("虛擬交易載入失敗：" + err.message);
+  } finally {
+    state.loading = false;
+    updateLoadMoreButton("btnLoadMorePaperTrades", state.hasMore, false);
   }
 }
 
@@ -1005,15 +1072,29 @@ function renderPaperSummary(data) {
   document.getElementById("paperTradesBody").innerHTML = trades.map(t => `<tr><td data-label="日期">${escapeHtml(t.date || "")}</td><td data-label="動作">${t.action === "BUY" ? "虛擬買入" : "虛擬賣出"}</td><td data-label="股票">${escapeHtml(displaySymbol(t.symbol, t.name))}</td><td data-label="股數">${number(t.quantity)}</td><td data-label="價格">${number(t.price)}</td><td data-label="損益" class="${Number(t.realizedPnl)>=0?'up':'down'}">${money(t.realizedPnl)}</td><td data-label="原因" class="candidate-reason">${escapeHtml(t.reason || "")}</td></tr>`).join("") || candidateEmptyRow("尚無虛擬交易紀錄", 7);
 }
 
-async function loadBacktestRuns() {
-  if (pageDataCache.backtestRuns) renderBacktestRuns(pageDataCache.backtestRuns);
-  else renderSkeleton("backtestRunsBody", "list", 3);
+async function loadBacktestRuns(options = {}) {
+  loadStrategyModels();
+  const state = paginationState.backtestRuns;
+  if (state.loading) return;
+  const append = options.append === true;
+  if (!append) state.offset = 0;
+  if (pageDataCache.backtestRuns && !append) renderBacktestRuns(pageDataCache.backtestRuns);
+  else if (!append) renderSkeleton("backtestRunsBody", "list", 3);
+  state.loading = true;
+  updateLoadMoreButton("btnLoadMoreBacktestRuns", false, true);
   try {
-    const data = await Api.getBacktestRuns();
-    pageDataCache.backtestRuns = data;
-    renderBacktestRuns(data);
+    const data = await Api.getBacktestRuns({ limit: state.limit, offset: state.offset });
+    const previousItems = append && pageDataCache.backtestRuns ? pageDataCache.backtestRuns.items || [] : [];
+    const merged = Object.assign({}, data, { items: previousItems.concat(data.items || []) });
+    pageDataCache.backtestRuns = merged;
+    state.offset = merged.items.length;
+    state.hasMore = Boolean(data.hasMore);
+    renderBacktestRuns(merged);
   } catch (err) {
     setApiStatus("尚無回測結果");
+  } finally {
+    state.loading = false;
+    updateLoadMoreButton("btnLoadMoreBacktestRuns", state.hasMore, false);
   }
 }
 
@@ -1220,8 +1301,9 @@ function renderUpdateStatus(updatedAt, dataDate, version, lastRun = {}) {
   el.textContent = `資料日期 ${dataDate}，最後更新 ${updatedAt || "尚未記錄"}${displayVersion ? " · " + displayVersion : ""}`;
 }
 
-function renderMarketCards(items) {
+function renderMarketCards(data) {
   const container = document.getElementById("marketCards");
+  const items = Array.isArray(data) ? data : (data.market || []);
   if (!items || items.length === 0) {
     container.innerHTML = `
       <div class="card wide-warning">
@@ -1233,27 +1315,68 @@ function renderMarketCards(items) {
     return;
   }
 
-  container.innerHTML = items.map(item => {
-    const cls = Number(item.change) >= 0 ? "up" : "down";
-    const changeText = item.symbol === "BULL" || item.symbol === "RISK"
-      ? `${item.changePercent || 0}%`
-      : `${number(item.change)} ${number(item.changePercent)}%`;
+  const dashboard = Array.isArray(data) ? { market: items } : data;
+  const marketSummary = dashboard.marketSummary || {};
+  const marketState = dashboard.marketState || marketSummary.marketState || {};
+  const taiex = items.find(item => item.symbol === "TAIEX") || marketSummary.taiex || {};
+  const bullish = dashboard.bullishSummary || marketSummary.bullishSummary || fallbackCountSummary(items, "BULL");
+  const risk = dashboard.riskSummary || marketSummary.riskSummary || fallbackCountSummary(items, "RISK");
+  const signals = dashboard.todaySignalSummary || { buyCount: 0, sellCount: 0, buyItems: [], sellItems: [] };
+  const average = dashboard.averageScoreSummary || marketSummary.averageScoreSummary || { value: marketSummary.watchlistMarket && marketSummary.watchlistMarket.avgScore };
+  const mode = marketState.marketMode || marketSummary.marketMode || taiex.trendText || "資料不足";
+  const changePercent = Number(marketState.changePercent !== undefined ? marketState.changePercent : taiex.changePercent || 0);
+  const changeClass = changePercent > 0 ? "up" : (changePercent < 0 ? "down" : "");
+  const changeArrow = changePercent > 0 ? "▲" : (changePercent < 0 ? "▼" : "→");
+  const riskLevel = risk.level === "high" ? "高風險" : (risk.level === "medium" ? "中度風險" : "低風險");
+  const averageChange = Number(average.change);
+  const averageMeta = Number.isFinite(averageChange) && average.yesterdayValue !== "" && average.yesterdayValue !== undefined
+    ? `昨日 ${number(average.yesterdayValue)} · ${averageChange > 0 ? "↑" : (averageChange < 0 ? "↓" : "→")} ${number(Math.abs(averageChange))}`
+    : "滿分 100";
 
-    const dateText = item.date ? `<div class="card-date">${escapeHtml(item.date)}</div>` : "";
-    const isMock = String(item.date || "").includes("模擬") || Number(item.close) === 23520;
-    const mockText = isMock ? `<div class="mock-hint">疑似模擬 / 舊資料</div>` : "";
+  container.innerHTML = [
+    dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷" }),
+    dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detail: buildMarketIndicatorLine(marketState, taiex) }),
+    dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, cls: "up", meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
+    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "down" : "warn", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
+    dashboardMetricCard({ title: "今日訊號", value: `買入 ${number(signals.buyCount)} · 賣出 ${number(signals.sellCount)}`, meta: "查看策略候選明細", action: "signals" }),
+    dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta })
+  ].join("");
+}
 
-    return `
-      <div class="card ${isMock ? "demo-warning" : ""}">
-        <div class="card-title">${escapeHtml(item.name || item.symbol)}</div>
-        <div class="card-value">${number(item.close)}</div>
-        <div class="${cls}">${changeText}</div>
-        ${dateText}
-        ${mockText}
-        ${sparkline(item.trend || [], cls === "up" ? "#22c55e" : "#ef4444")}
-      </div>
-    `;
-  }).join("");
+function dashboardMetricCard(options) {
+  const content = `<div class="card-title">${escapeHtml(options.title || "")}</div>
+    <div class="dashboard-card-value ${options.cls || ""}">${escapeHtml(String(options.value === undefined ? "-" : options.value))}</div>
+    ${options.meta ? `<div class="dashboard-card-meta">${escapeHtml(options.meta)}</div>` : ""}
+    ${options.detail ? `<div class="dashboard-card-detail">${escapeHtml(options.detail)}</div>` : ""}
+    ${options.action ? '<div class="dashboard-card-link">查看詳細 →</div>' : ""}`;
+  if (!options.action) return `<article class="card dashboard-metric-card">${content}</article>`;
+  return `<button type="button" class="card dashboard-metric-card is-action" data-action="open-dashboard-detail" data-detail-type="${escapeHtml(options.action)}">${content}</button>`;
+}
+
+function fallbackCountSummary(items, symbol) {
+  const item = (items || []).find(row => row.symbol === symbol) || {};
+  return { count: Number(item.close || 0), total: 0, rate: Number(item.changePercent || 0), items: [] };
+}
+
+function buildMarketIndicatorLine(state, taiex) {
+  const ma20 = state.ma20 !== undefined ? state.ma20 : taiex.ma20;
+  const aboveMa20 = state.aboveMa20 !== undefined ? state.aboveMa20 : taiex.aboveMa20;
+  const parts = [];
+  if (ma20 !== "" && ma20 !== undefined) parts.push(`MA20：${aboveMa20 ? "站上" : "跌破"}`);
+  if (state.rsi14 !== "" && state.rsi14 !== undefined) parts.push(`RSI：${number(state.rsi14)}`);
+  if (state.adx14 !== "" && state.adx14 !== undefined) parts.push(`ADX：${number(state.adx14)}`);
+  return parts.join(" · ");
+}
+
+function riskStars(value) {
+  const count = Math.max(0, Math.min(5, Number(value || 0)));
+  return "★".repeat(count) + "☆".repeat(5 - count);
+}
+
+function marketModeClass(mode) {
+  if (String(mode).includes("多頭") || mode === "反彈") return "up";
+  if (mode === "空頭") return "down";
+  return "warn";
 }
 
 function renderWatchlist(items) {
@@ -1274,28 +1397,168 @@ function renderWatchlist(items) {
   }
 
   tbody.innerHTML = visibleItems.map(item => {
-    const badgeClass = getBadgeClass(item.trendText);
+    const statusText = dashboardStatusText(item);
+    const badgeClass = getBadgeClass(statusText);
     const safeSymbol = escapeHtml(String(item.symbol || ""));
     const safeName = escapeHtml(String(item.name || ""));
+    const signals = buildSignalChips_(item);
+    const rsiArrow = item.rsiDirection === "up" ? "↑" : (item.rsiDirection === "down" ? "↓" : (item.rsiDirection === "flat" ? "→" : ""));
+    const adxValue = finiteValue(item.adx14);
+    const atrValue = formatAtrPercent(item.atrPercent);
+    const volumeValue = finiteValue(item.volumeRatio);
+    const sparkStats = calcSparklineStats_(item.sparkline || item.trend || []);
+    const sparkTitle = sparkStats.valid ? `近 20 日｜最高 ${number(sparkStats.high)}｜最低 ${number(sparkStats.low)}｜漲跌 ${signedNumber(sparkStats.changePercent)}%｜波動 ${number(sparkStats.rangePercent)}%` : "近 20 日資料不足";
     return `
       <tr>
-        <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
-        <td data-label="資料日">${escapeHtml(item.date || "-")}</td>
-        <td data-label="收盤">${number(item.close)}</td>
-        <td data-label="RSI">${number(item.rsi14)}</td>
-        <td data-label="量比">${number(item.volumeRatio)}</td>
-        <td data-label="分數">${number(item.totalScore)}</td>
-        <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(item.trendText || "觀察")}</span></td>
-        <td data-label="訊號">${escapeHtml(item.signalSummary || "")}</td>
-        <td data-label="迷你線圖" class="td-sparkline">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</td>
+        <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)} · ${escapeHtml(item.date || "-")}</small></div></td>
+        <td data-label="技術分數"><strong class="score-value ${scoreClass(item.totalScore)}">${number(item.totalScore)}</strong></td>
+        <td data-label="狀態"><span class="badge ${badgeClass}">${escapeHtml(statusText)}</span></td>
+        <td data-label="RSI"><span class="indicator-value ${rsiDirectionClass(item.rsiDirection)}">${number(item.rsi14)} ${rsiArrow}</span></td>
+        <td data-label="ADX"><span class="indicator-value ${adxClass(adxValue)}" title="${adxTitle(adxValue)}">${adxValue === null ? "-" : number(adxValue)}</span></td>
+        <td data-label="ATR%"><span class="indicator-value ${atrClass(atrValue)}" title="${atrTitle(atrValue)}">${atrValue === null ? "-" : number(atrValue) + "%"}</span></td>
+        <td data-label="量比"><span class="volume-ratio ${volumeRatioClass(volumeValue)}">${volumeValue === null ? "-" : number(volumeValue) + "x"}</span></td>
+        <td data-label="訊號"><div class="signal-chips">${renderSignalChips(signals)}</div></td>
+        <td data-label="迷你線圖" class="td-sparkline"><button class="sparkline-button" type="button" data-action="open-sparkline-stats" data-symbol="${safeSymbol}" title="${escapeHtml(sparkTitle)}">${sparkline(item.trend || [], "#38bdf8", 160, 36)}</button></td>
         <td data-label="操作"><button class="danger-btn" type="button" data-action="remove-watchlist" data-symbol="${safeSymbol}" data-name="${safeName}">移除</button></td>
       </tr>
     `;
   }).join("");
 }
 
+function dashboardStatusText(item) {
+  if (item && item.statusText) return String(item.statusText);
+  const score = finiteValue(item && item.totalScore);
+  if (score === null) return String((item && item.trendText) || "觀察");
+  const risk = Number(item.riskScore || 0);
+  const close = Number(item.close || 0);
+  const ma20 = finiteValue(item.ma20);
+  const ma60 = finiteValue(item.ma60);
+  if (score >= 80 && risk >= 60 && ma20 !== null && ma60 !== null && close > ma20 && ma20 > ma60) return "強勢多頭";
+  if (score >= 65) return "偏多";
+  if (score >= 50) return "中性";
+  if (score >= 40) return "偏空";
+  return "空頭";
+}
+
+function scoreClass(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return "score-neutral";
+  if (score >= 80) return "score-strong";
+  if (score >= 60) return "score-good";
+  if (score >= 40) return "score-neutral";
+  return "score-weak";
+}
+
+function finiteValue(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatAtrPercent(value) {
+  const parsed = finiteValue(value);
+  if (parsed === null) return null;
+  return Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+}
+
+function rsiDirectionClass(direction) {
+  if (direction === "up") return "indicator-up";
+  if (direction === "down") return "indicator-down";
+  return "indicator-flat";
+}
+
+function adxClass(value) {
+  if (value === null) return "indicator-flat";
+  if (value >= 25) return "indicator-up";
+  if (value >= 20) return "indicator-warn";
+  return "indicator-flat";
+}
+
+function adxTitle(value) {
+  if (value === null) return "ADX 資料不足";
+  if (value >= 25) return "趨勢明顯";
+  if (value >= 20) return "趨勢開始";
+  return "盤整";
+}
+
+function atrClass(value) {
+  if (value === null) return "indicator-flat";
+  if (value >= 5) return "indicator-down";
+  if (value >= 2) return "indicator-warn";
+  return "indicator-flat";
+}
+
+function atrTitle(value) {
+  if (value === null) return "ATR 資料不足";
+  if (value >= 5) return "高波動";
+  if (value >= 2) return "一般波動";
+  return "低波動";
+}
+
+function volumeRatioClass(value) {
+  if (value === null) return "volume-muted";
+  if (value >= 1.5) return "volume-strong";
+  if (value >= 1) return "volume-normal";
+  return "volume-muted";
+}
+
+function buildSignalChips_(context) {
+  const chips = [];
+  const add = label => { if (label && chips.indexOf(label) < 0) chips.push(label); };
+  const close = finiteValue(context.close);
+  const ma20 = finiteValue(context.ma20);
+  const ma60 = finiteValue(context.ma60);
+  const rsi = finiteValue(context.rsi14);
+  const k9 = finiteValue(context.k9);
+  const d9 = finiteValue(context.d9);
+  const macdHist = finiteValue(context.macdHist);
+  const bbPercentB = finiteValue(context.bbPercentB);
+  const high20 = finiteValue(context.high20);
+  const adx = finiteValue(context.adx14);
+  const volume = finiteValue(context.volumeRatio);
+  const summary = String(context.signalSummary || "");
+  if (close !== null && ma20 !== null && close >= ma20) add("MA20");
+  if (close !== null && ma60 !== null && close >= ma60) add("MA60");
+  if (rsi !== null && rsi > 70) add("RSI過熱");
+  else if (rsi !== null && rsi > 50) add("RSI>50");
+  if (/KD.*金叉|KD金叉/.test(summary)) add("KD金叉");
+  else if (/KD.*死叉|KD死叉/.test(summary)) add("KD死叉");
+  else if (k9 !== null && d9 !== null) add(k9 >= d9 ? "KD金叉" : "KD死叉");
+  if (macdHist !== null) add(macdHist >= 0 ? "MACD+" : "MACD-");
+  if (bbPercentB !== null && bbPercentB >= 0.2 && bbPercentB <= 0.8) add("布林健康");
+  if (close !== null && high20 !== null && close >= high20) add("突破20高");
+  if (adx !== null && adx >= 25) add("ADX趨勢");
+  if (volume !== null && volume >= 1.5) add("量增");
+  return chips;
+}
+
+function renderSignalChips(chips) {
+  if (!chips || !chips.length) return '<span class="signal-empty">暫無</span>';
+  return chips.map(chip => `<span class="signal-chip">✓ ${escapeHtml(chip)}</span>`).join("");
+}
+
+function calcSparklineStats_(values) {
+  const rows = (Array.isArray(values) ? values : []).map(Number).filter(Number.isFinite).slice(-20);
+  if (rows.length < 2) return { valid: false };
+  const high = Math.max(...rows);
+  const low = Math.min(...rows);
+  const first = rows[0];
+  return {
+    valid: true,
+    high: high,
+    low: low,
+    changePercent: first ? (rows[rows.length - 1] / first - 1) * 100 : 0,
+    rangePercent: low ? (high / low - 1) * 100 : 0
+  };
+}
+
+function signedNumber(value) {
+  const parsed = Number(value || 0);
+  return `${parsed > 0 ? "+" : ""}${number(parsed)}`;
+}
+
 function setWatchlistSort(key) {
-  const allowed = ["symbol", "date", "close", "rsi14", "volumeRatio", "totalScore", "trendText", "signalSummary"];
+  const allowed = ["symbol", "date", "close", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore", "trendText", "signalSummary"];
   if (allowed.indexOf(key) < 0) return;
   if (watchlistSortState.key === key) {
     watchlistSortState.direction = watchlistSortState.direction === "asc" ? "desc" : "asc";
@@ -1310,7 +1573,7 @@ function compareWatchlistItems(a, b) {
   const key = watchlistSortState.key;
   if (!key) return 0;
   const direction = watchlistSortState.direction === "desc" ? -1 : 1;
-  const numericKeys = ["close", "rsi14", "volumeRatio", "totalScore"];
+  const numericKeys = ["close", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore"];
   if (numericKeys.indexOf(key) >= 0) {
     const aBlank = a[key] === "" || a[key] === null || a[key] === undefined || !Number.isFinite(Number(a[key]));
     const bBlank = b[key] === "" || b[key] === null || b[key] === undefined || !Number.isFinite(Number(b[key]));
@@ -1336,16 +1599,25 @@ function updateWatchlistSortHeaders() {
   });
 }
 
-async function loadPortfolio() {
+async function loadPortfolio(options = {}) {
   let data = pageDataCache.portfolio;
   if (data) renderPortfolioData(data);
   else {
     renderSkeleton("portfolioSummary", "summary", 4);
-    renderTableLoading("portfolioBody", 8, "庫存資料載入中");
+    renderTableLoading("portfolioBody", 11, "庫存資料載入中");
   }
   try {
-    data = await Api.getPortfolio();
+    data = await Api.getPortfolio(options.force === true);
     pageDataCache.portfolio = data;
+    renderPortfolioData(data);
+    if (data.stale && Api.refreshPortfolio && options.skipRefresh !== true) {
+      setPortfolioStatus("庫存計算中...", "warning");
+      const refreshed = await Api.refreshPortfolio();
+      pageDataCache.portfolio = refreshed;
+      data = refreshed;
+      renderPortfolioData(data);
+      showToast("庫存更新完成", "success");
+    }
     setApiStatus("API 已連線");
   } catch (err) {
     data = data || Mock.portfolio;
@@ -1362,6 +1634,7 @@ function renderPortfolioData(data) {
   const marketValue = items.reduce((sum, x) => sum + Number(x.marketValue || 0), 0);
   const pnl = items.reduce((sum, x) => sum + Number(x.unrealizedPnl || 0), 0);
   const rate = totalCost ? pnl / totalCost * 100 : 0;
+  setPortfolioStatus(data.stale ? "庫存計算中..." : `資料日期：${data.dataDate || latestPortfolioDate(items) || "-"} · ${data.message || "最新股價已更新"}`, data.stale ? "warning" : "success");
 
   document.getElementById("portfolioSummary").innerHTML = `
     ${summaryCard("總投入成本", money(totalCost), "")}
@@ -1381,10 +1654,24 @@ function renderPortfolioData(data) {
         <td data-label="市值">${money(item.marketValue)}</td>
         <td data-label="未實現損益" class="${pnlCls}">${money(item.unrealizedPnl)}</td>
         <td data-label="報酬率" class="${pnlCls}">${number(item.unrealizedRate)}%</td>
+        <td data-label="技術分數"><span class="${scoreClass(item.totalScore)}">${number(item.totalScore)}</span></td>
+        <td data-label="風險分數">${number(item.riskScore)}</td>
         <td data-label="技術狀態"><span class="badge ${getBadgeClass(item.trendText)}">${escapeHtml(item.trendText || "觀察")}</span></td>
+        <td data-label="資料日期">${escapeHtml(item.lastDate || data.dataDate || "-")}</td>
       </tr>
     `;
   }).join("");
+}
+
+function setPortfolioStatus(message, type) {
+  const target = document.getElementById("portfolioStatus");
+  if (!target) return;
+  target.textContent = message || "";
+  target.className = `muted portfolio-status ${type || ""}`;
+}
+
+function latestPortfolioDate(items) {
+  return (items || []).map(item => String(item.lastDate || "")).filter(Boolean).sort().pop() || "";
 }
 
 async function loadAnalysis(symbol, forceRefresh = false) {
@@ -1576,10 +1863,11 @@ async function loadTransactions(options = {}) {
 function renderTransactions(items) {
   document.getElementById("transactionsBody").innerHTML = (items || []).map(item => {
     const id = escapeHtml(String(item.id || ""));
-    const disabled = item.pending ? "disabled" : "";
-    const statusText = item.pending ? "同步中" : "刪除";
+    let actionHtml = `<button class="danger-btn" type="button" data-action="delete-transaction" data-id="${id}">刪除</button>`;
+    if (item.pending) actionHtml = '<span class="transaction-status pending">儲存中</span>';
+    if (item.error) actionHtml = `<div class="transaction-error-actions"><button type="button" data-action="retry-pending-transaction" data-id="${id}">重試</button><button class="danger-btn" type="button" data-action="remove-pending-transaction" data-id="${id}">移除</button></div>`;
     return `
-    <tr>
+    <tr class="${item.pending ? "is-pending" : ""} ${item.error ? "is-error" : ""}">
       <td data-label="日期">${escapeHtml(item.date || "")}</td>
       <td data-label="類型">${escapeHtml(item.action || "")}</td>
       <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
@@ -1588,7 +1876,7 @@ function renderTransactions(items) {
       <td data-label="手續費">${number(item.fee)}</td>
       <td data-label="稅">${number(item.tax)}</td>
       <td data-label="備註">${escapeHtml(item.note || "")}</td>
-      <td data-label="操作"><button class="danger-btn" type="button" data-action="delete-transaction" data-id="${id}" ${disabled}>${statusText}</button></td>
+      <td data-label="操作">${actionHtml}</td>
     </tr>
   `;
   }).join("");
@@ -1618,7 +1906,9 @@ async function onSubmitTransaction(event) {
     fee: payload.fee,
     tax: payload.tax,
     note: payload.note,
-    pending: true
+    pending: true,
+    error: false,
+    retryPayload: payload
   };
 
   addCachedTransaction(optimisticItem);
@@ -1628,17 +1918,61 @@ async function onSubmitTransaction(event) {
   if (dateInput) dateInput.valueAsDate = new Date();
 
   try {
-    await Api.addTransaction(payload);
-    analysisMemoryCache.clear();
+    const result = await Api.addTransaction(payload);
+    replaceCachedTransaction(optimisticItem.id, Object.assign({}, result.transaction || {}, {
+      id: result.id || (result.transaction && result.transaction.id) || optimisticItem.id,
+      name: (result.stock && result.stock.name) || (result.transaction && result.transaction.name) || "",
+      pending: false,
+      error: false,
+      retryPayload: null
+    }));
     clearCache(CACHE_KEYS.dashboard);
-    clearCache(CACHE_KEYS.transactions);
-    pageDataCache.transactions = null;
-    message.textContent = "新增成功";
-    await loadTransactions();
+    pageDataCache.dashboard = null;
+    pageDataCache.portfolio = null;
+    message.textContent = "新增成功，庫存正在背景更新";
+    showToast("交易已儲存，庫存正在背景更新", "success");
+    refreshPortfolioAfterTransaction();
   } catch (err) {
     message.textContent = "新增失敗：" + err.message;
-    removeCachedTransaction(optimisticItem.id);
+    replaceCachedTransaction(optimisticItem.id, { pending: false, error: true, errorMessage: err.message });
+    showToast("交易儲存失敗，可在列表重試", "error");
   }
+}
+
+async function retryPendingTransaction(id) {
+  const cached = pageDataCache.transactions || getCachedTransactions();
+  const item = cached && (cached.items || []).find(row => String(row.id || "") === String(id));
+  if (!item || !item.retryPayload) return;
+  replaceCachedTransaction(id, { pending: true, error: false });
+  try {
+    const result = await Api.addTransaction(item.retryPayload);
+    replaceCachedTransaction(id, Object.assign({}, result.transaction || {}, {
+      id: result.id || (result.transaction && result.transaction.id) || id,
+      name: (result.stock && result.stock.name) || (result.transaction && result.transaction.name) || item.name || "",
+      pending: false,
+      error: false,
+      retryPayload: null
+    }));
+    showToast("交易重試成功", "success");
+    refreshPortfolioAfterTransaction();
+  } catch (err) {
+    replaceCachedTransaction(id, { pending: false, error: true, errorMessage: err.message });
+    showToast("重試失敗：" + err.message, "error");
+  }
+}
+
+function refreshPortfolioAfterTransaction() {
+  setTimeout(() => {
+    Api.getPortfolio(true).then(data => {
+      if (data && data.stale && typeof Api.refreshPortfolio === "function") {
+        return Api.refreshPortfolio();
+      }
+      return data;
+    }).then(data => {
+      pageDataCache.portfolio = data;
+      if (!data.stale) showToast("庫存背景更新完成", "success");
+    }).catch(() => null);
+  }, 65000);
 }
 
 async function onDeleteTransaction(btn) {
@@ -1648,9 +1982,11 @@ async function onDeleteTransaction(btn) {
   const ok = confirm("確定要刪除這筆交易紀錄嗎？");
   if (!ok) return;
 
-  const cached = getCachedTransactions();
+  const cached = pageDataCache.transactions || getCachedTransactions();
+  const previousItems = cached ? (cached.items || []).slice() : null;
   if (cached) {
     cached.items = (cached.items || []).filter(item => String(item.id || "") !== id);
+    pageDataCache.transactions = cached;
     saveTransactionsCache(cached);
     renderTransactions(cached.items || []);
   }
@@ -1659,15 +1995,21 @@ async function onDeleteTransaction(btn) {
     btn.disabled = true;
     setApiStatus("正在刪除交易紀錄...");
     await Api.deleteTransaction(id);
-    analysisMemoryCache.clear();
     clearCache(CACHE_KEYS.dashboard);
-    clearCache(CACHE_KEYS.transactions);
-    pageDataCache.transactions = null;
-    setApiStatus("已刪除交易紀錄");
-    await loadTransactions();
+    pageDataCache.dashboard = null;
+    pageDataCache.portfolio = null;
+    setApiStatus("已刪除交易紀錄，庫存正在背景更新");
+    showToast("交易已刪除", "success");
+    refreshPortfolioAfterTransaction();
   } catch (err) {
     setApiStatus("刪除交易失敗：" + err.message);
-    await loadTransactions();
+    if (previousItems) {
+      cached.items = previousItems;
+      pageDataCache.transactions = cached;
+      saveTransactionsCache(cached);
+      renderTransactions(previousItems);
+    }
+    showToast("刪除失敗，已恢復原紀錄", "error");
   } finally {
     btn.disabled = false;
   }
@@ -1892,8 +2234,8 @@ function formatLocalDate(date) {
 
 function getBadgeClass(text) {
   if (!text) return "";
-  if (text.includes("偏弱") || text.includes("風險")) return "danger";
-  if (text.includes("盤整") || text.includes("過熱") || text.includes("觀察")) return "warn";
+  if (text.includes("偏弱") || text.includes("偏空") || text.includes("空頭") || text.includes("風險")) return "danger";
+  if (text.includes("盤整") || text.includes("中性") || text.includes("過熱") || text.includes("觀察")) return "warn";
   return "";
 }
 
@@ -1944,7 +2286,9 @@ const pageDataCache = {
 
 const paginationState = {
   transactions: { limit: 50, offset: 0, hasMore: false, loading: false },
-  notifications: { limit: 50, offset: 0, hasMore: false, loading: false }
+  notifications: { limit: 50, offset: 0, hasMore: false, loading: false },
+  paperTrades: { limit: 50, offset: 0, hasMore: false, loading: false },
+  backtestRuns: { limit: 20, offset: 0, hasMore: false, loading: false }
 };
 
 Object.assign(pages, {
@@ -1972,6 +2316,10 @@ window.addEventListener("DOMContentLoaded", () => {
   if (moreNotifications) moreNotifications.addEventListener("click", () => loadNotifications({ append: true }));
   const moreTransactions = document.getElementById("btnLoadMoreTransactions");
   if (moreTransactions) moreTransactions.addEventListener("click", () => loadTransactions({ append: true }));
+  const morePaperTrades = document.getElementById("btnLoadMorePaperTrades");
+  if (morePaperTrades) morePaperTrades.addEventListener("click", () => loadPaperSummary({ append: true }));
+  const moreBacktestRuns = document.getElementById("btnLoadMoreBacktestRuns");
+  if (moreBacktestRuns) moreBacktestRuns.addEventListener("click", () => loadBacktestRuns({ append: true }));
   const mobileMore = document.getElementById("btnMobileMore");
   if (mobileMore) mobileMore.addEventListener("click", openMobileMore);
   buildMobileMoreLinks();
@@ -2401,22 +2749,25 @@ function debounce(fn, wait = 250) {
 function renderDashboardV11Summary(data) {
   const container = document.getElementById("dashboardV11Summary");
   if (!container) return;
-  const market = data.marketSummary;
-  const stats = data.stats;
-  const health = data.strategyHealth;
-  const leaderboard = data.candidateLeaderboardSummary;
-  if (!market && !stats && !health && !leaderboard) {
+  const market = data.marketSummary || {};
+  const narrative = data.marketNarrative || market.narrative;
+  const warnings = data.strategyWarnings || { count: 0, items: [] };
+  if (!narrative && !warnings.count) {
     container.innerHTML = "";
     return;
   }
-  const warnings = health && Array.isArray(health.models) ? health.models.filter(model => (model.warningList || []).length).length : 0;
-  container.innerHTML = `<div class="grid-4">
-    ${summaryCard("今日市場", escapeHtml((market && market.marketMode) || "-"), market && market.marketRiskOn ? "up" : "down")}
-    ${summaryCard("關注股平均分數", number(market && market.watchlistMarket && market.watchlistMarket.avgScore), "")}
-    ${summaryCard("買入 / 賣出候選", `${number(leaderboard && leaderboard.buyCount)} / ${number(leaderboard && leaderboard.sellCount)}`, "")}
-    ${summaryCard("策略警告", warnings, warnings ? "down" : "up")}
-  </div>
-  <div class="notice-band">${escapeHtml((market && market.summaryText) || "")}${market && market.riskText ? ` · ${escapeHtml(market.riskText)}` : ""}</div>`;
+  const reasonList = narrative && Array.isArray(narrative.reasonList) ? narrative.reasonList : (market.reasonList || []);
+  container.innerHTML = `<section class="market-narrative">
+    <div class="market-narrative-head">
+      <div><div class="section-kicker">盤後判讀</div><h2>${escapeHtml((narrative && narrative.title) || `今日市場：${market.marketMode || "資料不足"}`)}</h2></div>
+      <button type="button" class="strategy-warning-button" data-action="open-dashboard-detail" data-detail-type="warnings">
+        <span>策略警告</span><strong>${number(warnings.count)}</strong><small>查看詳細 →</small>
+      </button>
+    </div>
+    <p>${escapeHtml((narrative && narrative.summaryText) || market.summaryText || "")}</p>
+    ${(narrative && narrative.suggestionText) || market.riskText ? `<p class="market-suggestion">${escapeHtml((narrative && narrative.suggestionText) || market.riskText || "")}</p>` : ""}
+    <div class="reason-chips">${reasonList.map(reason => `<span>${escapeHtml(reason)}</span>`).join("")}</div>
+  </section>`;
 }
 
 function buildMobileMoreLinks() {
@@ -2442,4 +2793,91 @@ function closeMobileMore() {
   if (!sheet) return;
   sheet.hidden = true;
   document.body.classList.remove("mobile-sheet-open");
+}
+
+function openDashboardDetail(type) {
+  const data = currentDashboardData || getCachedDashboard() || {};
+  const market = data.marketSummary || {};
+  let title = "詳細清單";
+  let items = [];
+  let kind = type;
+  if (type === "bullish") {
+    title = "偏多股票清單";
+    items = ((data.bullishSummary || market.bullishSummary || {}).items || []);
+  } else if (type === "risk") {
+    title = "風險提醒清單";
+    items = ((data.riskSummary || market.riskSummary || {}).items || []);
+  } else if (type === "warnings") {
+    title = "策略警告清單";
+    items = ((data.strategyWarnings || {}).items || []);
+  } else if (type === "signals") {
+    title = "今日訊號清單";
+    const summary = data.todaySignalSummary || {};
+    items = (summary.buyItems || []).map(item => Object.assign({ signalSide: "買入" }, item))
+      .concat((summary.sellItems || []).map(item => Object.assign({ signalSide: "賣出" }, item)));
+  }
+  openDashboardDetailSheet(title, renderDashboardDetailItems(items, kind));
+}
+
+function renderDashboardDetailItems(items, kind) {
+  if (!items || !items.length) return renderV11Empty("目前沒有符合條件的股票");
+  return `<div class="detail-list">${items.map(item => {
+    const reasons = normalizeTextList(item.reasonList || item.message || item.reason || item.warningType);
+    const status = item.trendText || item.statusText || item.signalSide || item.title || "";
+    const primaryScore = kind === "risk" ? `風險分數 ${number(item.riskScore)}` : (kind === "signals" ? `${escapeHtml(item.signalSide || "訊號")} · 信心 ${number(item.confidenceScore || item.totalScore)}` : `技術分數 ${number(item.totalScore)}`);
+    return `<article class="detail-list-item ${kind === "risk" || kind === "warnings" ? "is-risk" : ""}">
+      <div class="detail-list-head"><div>${renderStockLink(item.symbol, item.name)}</div><span class="badge ${getBadgeClass(status)}">${escapeHtml(status)}</span></div>
+      <strong>${primaryScore}</strong>
+      ${reasons.length ? `<ul>${reasons.map(reason => `<li>${kind === "risk" || kind === "warnings" ? "⚠" : "✓"} ${escapeHtml(reason)}</li>`).join("")}</ul>` : '<p class="muted">尚無進一步說明</p>'}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function openSparklineStats(symbol) {
+  const item = (currentWatchlistItems || []).find(row => normalizeSymbolInput(row.symbol) === normalizeSymbolInput(symbol));
+  const stats = calcSparklineStats_((item && (item.sparkline || item.trend)) || []);
+  const title = `${displaySymbol(symbol, item && item.name)} 近 20 日統計`;
+  const body = !stats.valid ? renderV11Empty("資料不足") : `<div class="sparkline-stats-grid">
+    <div><span>最高</span><strong>${number(stats.high)}</strong></div>
+    <div><span>最低</span><strong>${number(stats.low)}</strong></div>
+    <div><span>漲跌</span><strong class="${stats.changePercent >= 0 ? "up" : "down"}">${signedNumber(stats.changePercent)}%</strong></div>
+    <div><span>波動</span><strong>${number(stats.rangePercent)}%</strong></div>
+  </div>${sparkline((item && (item.sparkline || item.trend)) || [], stats.changePercent >= 0 ? "#22c55e" : "#ef4444", 520, 110)}`;
+  openDashboardDetailSheet(title, body);
+}
+
+function openDashboardDetailSheet(title, body) {
+  const sheet = document.getElementById("dashboardDetailSheet");
+  document.getElementById("dashboardDetailTitle").textContent = title || "詳細清單";
+  document.getElementById("dashboardDetailBody").innerHTML = body || "";
+  sheet.hidden = false;
+  document.body.classList.add("detail-sheet-open");
+}
+
+function closeDashboardDetail() {
+  const sheet = document.getElementById("dashboardDetailSheet");
+  if (sheet) sheet.hidden = true;
+  document.body.classList.remove("detail-sheet-open");
+}
+
+function openBackfillSheet() {
+  const sheet = document.getElementById("backfillSheet");
+  if (sheet) sheet.hidden = false;
+  document.body.classList.add("detail-sheet-open");
+}
+
+function closeBackfillSheet() {
+  const sheet = document.getElementById("backfillSheet");
+  if (sheet) sheet.hidden = true;
+  document.body.classList.remove("detail-sheet-open");
+}
+
+function showToast(message, type = "info") {
+  const region = document.getElementById("toastRegion");
+  if (!region || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  region.appendChild(toast);
+  setTimeout(() => toast.remove(), 4200);
 }

@@ -15,7 +15,7 @@
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v11.4</div>
+        <div class="app-version" id="appVersion">前端 v11.5</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
@@ -54,7 +54,7 @@
       </div>
 
       <section id="dashboardPage" class="page active">
-        <div id="marketCards" class="grid-4"></div>
+        <div id="marketCards" class="dashboard-primary-grid"></div>
         <div id="dashboardV11Summary" class="dashboard-v11-summary"></div>
 
         <div class="panel">
@@ -89,12 +89,12 @@
               <thead>
                 <tr>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="symbol">股票</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="date">資料日</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="close">收盤</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="totalScore">分數</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="adx14">ADX</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="atrPercent">ATR%</button></th>
+                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="signalSummary">訊號</button></th>
                   <th>迷你線圖</th>
                   <th>操作</th>
@@ -253,7 +253,7 @@
         <div id="paperSummaryCards" class="grid-4"></div>
         <div class="panel"><h2>虛擬策略</h2><div id="paperStrategies" class="strategy-list"></div></div>
         <div class="panel"><h2>目前虛擬持倉</h2><div class="table-wrap"><table><thead><tr><th>策略</th><th>股票</th><th>股數</th><th>平均成本</th><th>現價</th><th>市值</th><th>損益</th><th>報酬率</th></tr></thead><tbody id="paperPositionsBody"></tbody></table></div></div>
-        <div class="panel"><h2>最近虛擬交易</h2><div class="table-wrap"><table><thead><tr><th>日期</th><th>動作</th><th>股票</th><th>股數</th><th>價格</th><th>損益</th><th>原因</th></tr></thead><tbody id="paperTradesBody"></tbody></table></div></div>
+        <div class="panel"><h2>最近虛擬交易</h2><div class="table-wrap"><table><thead><tr><th>日期</th><th>動作</th><th>股票</th><th>股數</th><th>價格</th><th>損益</th><th>原因</th></tr></thead><tbody id="paperTradesBody"></tbody></table></div><div class="list-actions"><button id="btnLoadMorePaperTrades" type="button" hidden>載入更多</button></div></div>
       </section>
 
       <section id="backtestPage" class="page">
@@ -274,7 +274,7 @@
           <div id="backtestStrategyInfo" class="strategy-model-info full"></div>
           <div class="form-actions full"><button type="submit">開始回測</button><span id="backtestMessage" class="muted"></span></div>
         </form>
-        <div class="panel"><h2>最近回測</h2><div id="backtestRunsBody" class="v11-list"></div></div>
+        <div class="panel"><h2>最近回測</h2><div id="backtestRunsBody" class="v11-list"></div><div class="list-actions"><button id="btnLoadMoreBacktestRuns" type="button" hidden>載入更多</button></div></div>
         <div id="backtestDiagnostics" class="notice-band diagnostic-band" hidden></div>
         <div id="backtestComparisonPanel" class="panel" hidden>
           <div class="panel-header"><div><h2>模型績效比較</h2><div class="muted">最高報酬只代表此回測區間，不代表下一次仍會勝出</div></div></div>
@@ -294,6 +294,7 @@
           <div class="panel-header">
             <div>
               <h2>我的庫存</h2>
+              <div id="portfolioStatus" class="muted">讀取最新庫存...</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -307,7 +308,10 @@
                   <th>市值</th>
                   <th>未實現損益</th>
                   <th>報酬率</th>
+                  <th>技術分數</th>
+                  <th>風險分數</th>
                   <th>技術狀態</th>
+                  <th>資料日期</th>
                 </tr>
               </thead>
               <tbody id="portfolioBody"></tbody>
@@ -423,8 +427,37 @@
     </div>
   </div>
 
-  <script src="js/config.js?v=11.4"></script>
-  <script src="js/api.js?v=11.4"></script>
-  <script src="js/app.js?v=11.4"></script>
+  <div id="dashboardDetailSheet" class="detail-sheet" hidden>
+    <button class="detail-sheet-backdrop" type="button" data-action="close-dashboard-detail" aria-label="關閉明細"></button>
+    <section class="detail-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="dashboardDetailTitle">
+      <header class="detail-sheet-header">
+        <div><div class="detail-sheet-kicker">首頁明細</div><h2 id="dashboardDetailTitle">詳細清單</h2></div>
+        <button class="icon-button" type="button" data-action="close-dashboard-detail" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <div id="dashboardDetailBody" class="detail-sheet-body"></div>
+    </section>
+  </div>
+
+  <div id="backfillSheet" class="detail-sheet" hidden>
+    <button class="detail-sheet-backdrop" type="button" data-action="close-backfill" aria-label="關閉回補設定"></button>
+    <section class="detail-sheet-panel compact" role="dialog" aria-modal="true" aria-labelledby="backfillTitle">
+      <header class="detail-sheet-header">
+        <div><div class="detail-sheet-kicker">資料工具</div><h2 id="backfillTitle">回補歷史資料</h2></div>
+        <button class="icon-button" type="button" data-action="close-backfill" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <form id="backfillForm" class="backfill-form">
+        <div class="inline-warning">回補歷史資料可能需要較久，開始後請勿關閉頁面。</div>
+        <label>月份<input name="months" type="number" min="1" max="60" value="12" required /></label>
+        <label>指定股票代號（可留空）<input name="symbols" type="text" placeholder="2330, 006208" /></label>
+        <div class="form-actions"><button type="submit">開始回補</button><span id="backfillMessage" class="muted"></span></div>
+      </form>
+    </section>
+  </div>
+
+  <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
+
+  <script src="js/config.js?v=11.5"></script>
+  <script src="js/api.js?v=11.5"></script>
+  <script src="js/app.js?v=11.5"></script>
 </body>
 </html>

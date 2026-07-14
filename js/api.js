@@ -76,7 +76,7 @@ const Api = (() => {
   return {
     isConfigured,
     getBackendVersion: () => getOnce("version"),
-    getDashboard: (force = false) => getOnce("dashboard", { force: force ? "1" : undefined }, { force }),
+    getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getStrategyModels: () => getOnce("strategyModels"),
     getCandidates: () => getOnce("candidates"),
     getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
@@ -89,7 +89,7 @@ const Api = (() => {
     markNotificationRead: (id) => jsonp("markNotificationRead", { id }),
     clearNotifications: () => jsonp("clearNotifications"),
     getStockDetail: (symbol, force = false) => getOnce("stockDetail", { symbol, force: force ? "1" : undefined }, { force }),
-    getPaperSummary: () => getOnce("paperSummary"),
+    getPaperSummary: (params = {}) => getOnce("paperSummary", Object.assign({ limit: 50 }, params)),
     createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
     togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),
     runPaperTrading: () => jsonp("runPaperTrading"),
@@ -97,7 +97,8 @@ const Api = (() => {
     runBacktestComparison: (data) => jsonp("runBacktestComparison", data),
     getBacktestRuns: (params = {}) => getOnce("backtestRuns", Object.assign({ limit: 20 }, params)),
     getBacktestResult: (runId, tradesLimit = 100) => getOnce("backtestResult", { runId, tradesLimit }),
-    getPortfolio: () => getOnce("portfolio"),
+    getPortfolio: (force = false) => getOnce("portfolio", {}, { force }),
+    refreshPortfolio: () => jsonp("refreshPortfolio"),
     getAnalysis: (symbol, force = false) => getOnce("analysis", { symbol, force: force ? "1" : undefined }, { force }),
     getTransactions: (params = {}) => getOnce("transactions", Object.assign({ limit: 100 }, params)),
     lookupStock: (symbol) => jsonp("lookupStock", { symbol }),
@@ -108,6 +109,7 @@ const Api = (() => {
     calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),
     runDailyDerivedCaches: () => jsonp("runDailyDerivedCaches"),
     addTransaction: (data) => jsonp("addTransaction", data),
-    deleteTransaction: (id) => jsonp("deleteTransaction", { id })
+    deleteTransaction: (id) => jsonp("deleteTransaction", { id }),
+    recalculateAfterTransaction: () => jsonp("recalculateAfterTransaction")
   };
 })();
