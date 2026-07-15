@@ -22,11 +22,6 @@
         <button class="nav-btn active" data-page="dashboard">首頁總覽</button>
         <button class="nav-btn" data-page="candidates">候選清單</button>
         <button class="nav-btn" data-page="market">市場總覽</button>
-        <button class="nav-btn" data-page="strategyResearch">策略研究</button>
-        <button class="nav-btn" data-page="strategyHealth">策略健康</button>
-        <button class="nav-btn" data-page="notifications">通知中心</button>
-        <button class="nav-btn" data-page="stats">統計中心</button>
-        <button class="nav-btn" data-page="backtest">策略回測</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
         <button class="nav-btn" data-page="analysis">線圖分析</button>
         <button class="nav-btn mobile-more-btn" id="btnMobileMore" type="button">更多</button>
@@ -112,29 +107,23 @@
           <div class="candidate-actions">
             <label class="candidate-sort">排序
               <select id="candidateSort">
-                <option value="score">分數高到低</option>
-                <option value="risk">風險分數低到高</option>
-                <option value="rsi">RSI 高到低</option>
-                <option value="return">報酬率高到低</option>
+                <option value="totalScore">技術分數高到低</option>
+                <option value="riskScore">風險分數高到低</option>
+                <option value="symbol">股票代號</option>
               </select>
             </label>
             <label class="candidate-sort">篩選
               <select id="candidateFilter">
                 <option value="all">全部候選</option>
-                <option value="high">高信心</option>
+                <option value="buy">買入候選</option>
+                <option value="sell">賣出候選</option>
                 <option value="etf">ETF</option>
                 <option value="stock">個股</option>
               </select>
             </label>
           </div>
         </div>
-        <div id="candidateStrategyInfo" class="strategy-model-info candidate-model-info"></div>
-
-        <div id="leaderboardSummary" class="grid-4"></div>
-        <div class="panel candidate-section">
-          <div class="panel-header"><div><h2>候選排行榜</h2><div class="muted">買進與賣出候選依信心分數、風險與模型命中排序。</div></div></div>
-          <div id="leaderboardBody" class="v11-grid"></div>
-        </div>
+        <div id="candidateSummary" class="grid-4 candidate-summary"></div>
 
         <div class="panel candidate-section">
           <div class="panel-header">
@@ -148,14 +137,15 @@
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>模型</th>
                   <th>收盤價</th>
                   <th>RSI</th>
+                  <th>ADX</th>
+                  <th>ATR</th>
                   <th>技術分數</th>
                   <th>風險分數</th>
                   <th>狀態</th>
-                  <th>候選分數</th>
                   <th>符合原因</th>
+                  <th>建議</th>
                 </tr>
               </thead>
               <tbody id="buyCandidatesBody"></tbody>
@@ -175,17 +165,15 @@
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>模型</th>
                   <th>收盤價</th>
-                  <th>平均成本</th>
-                  <th>持有股數</th>
-                  <th>未實現損益</th>
-                  <th>報酬率</th>
                   <th>RSI</th>
+                  <th>ADX</th>
+                  <th>ATR</th>
                   <th>技術分數</th>
                   <th>風險分數</th>
-                  <th>候選分數</th>
+                  <th>狀態</th>
                   <th>符合原因</th>
+                  <th>建議</th>
                 </tr>
               </thead>
               <tbody id="sellCandidatesBody"></tbody>
@@ -199,111 +187,22 @@
         <div class="panel"><h2>市場摘要</h2><div id="marketSummaryBody" class="v11-list"></div></div>
       </section>
 
-      <section id="strategyHealthPage" class="page">
-        <div id="strategyHealthCards" class="grid-4"></div>
-        <div class="panel"><h2>策略健康</h2><div id="strategyHealthBody" class="v11-grid"></div></div>
-      </section>
-
-      <section id="strategyResearchPage" class="page">
-        <div class="panel"><h2>策略研究</h2><div id="strategyResearchBody" class="v11-grid"></div></div>
-      </section>
-
-      <section id="notificationsPage" class="page">
-        <div class="panel">
-          <div class="panel-header"><div><h2>通知中心</h2><div class="muted">候選、風險、資料更新與策略健康提醒。</div></div><button id="btnClearNotifications" type="button">清除通知</button></div>
-          <div id="notificationsBody" class="v11-list"></div>
-          <div class="list-actions"><button id="btnLoadMoreNotifications" type="button" hidden>載入更多</button></div>
-        </div>
-      </section>
-
-      <section id="statsPage" class="page">
-        <div id="statsCards" class="grid-4"></div>
-        <div class="panel"><h2>系統統計</h2><div id="statsBody" class="v11-grid"></div></div>
-      </section>
-
-      <section id="paperPage" class="page">
-        <div class="notice-band">
-          可選擇不同技術指標模型進行每日虛擬買賣。策略只做模擬，不會產生真實交易，也不代表未來績效。
-        </div>
-        <form id="paperStrategyForm" class="panel form-grid">
-          <label>策略模型
-            <select id="paperStrategyType" name="strategyType">
-              <option value="PERSISTENT_MOMENTUM_V2">持續動能波段策略</option>
-              <option value="TREND_PULLBACK_V2">多頭回檔確認策略</option>
-              <option value="CONFIRMED_BREAKOUT_V2">確認突破短波段策略</option>
-              <option value="OVERSOLD_REBOUND_V2">多頭超賣反彈策略</option>
-              <option value="ETF_TREND_V2">ETF 月線趨勢策略</option>
-              <option value="BUY_HOLD_BASELINE_V1">買進持有基準</option>
-              <option value="CASH_WAIT_BASELINE_V1">現金觀望基準</option>
-            </select>
-          </label>
-          <label>策略名稱<input name="name" value="持續動能波段策略" required /></label>
-          <label>股票代號<input name="symbols" placeholder="2330,0050,006208" required /></label>
-          <label>初始資金<input name="initialCash" type="number" min="1" value="300000" required /></label>
-          <label class="check-label"><input name="enabled" type="checkbox" checked />啟用每日虛擬交易</label>
-          <div id="paperStrategyInfo" class="strategy-model-info full"></div>
-          <div class="form-actions full"><button type="submit">建立虛擬策略</button><button id="btnRunPaper" type="button">執行今日模擬</button><span id="paperMessage" class="muted"></span></div>
-        </form>
-        <div id="paperSummaryCards" class="grid-4"></div>
-        <div class="panel"><h2>虛擬策略</h2><div id="paperStrategies" class="strategy-list"></div></div>
-        <div class="panel"><h2>目前虛擬持倉</h2><div class="table-wrap"><table><thead><tr><th>策略</th><th>股票</th><th>股數</th><th>平均成本</th><th>現價</th><th>市值</th><th>損益</th><th>報酬率</th></tr></thead><tbody id="paperPositionsBody"></tbody></table></div></div>
-        <div class="panel"><h2>最近虛擬交易</h2><div class="table-wrap"><table><thead><tr><th>日期</th><th>動作</th><th>股票</th><th>股數</th><th>價格</th><th>損益</th><th>原因</th></tr></thead><tbody id="paperTradesBody"></tbody></table></div><div class="list-actions"><button id="btnLoadMorePaperTrades" type="button" hidden>載入更多</button></div></div>
-      </section>
-
-      <section id="backtestPage" class="page">
-        <div class="notice-band">盤後訊號統一於下一交易日開盤模擬成交。可複選模型並和買進持有、現金觀望基準比較；短期間交易筆數少時，勝率不具代表性。</div>
-        <form id="backtestForm" class="panel form-grid">
-          <label class="full">股票代號，最多 10 檔<input name="symbols" placeholder="2330,0050,006208" required /></label>
-          <fieldset class="strategy-model-picker full">
-            <legend>策略模型，可複選</legend>
-            <div id="backtestStrategyOptions" class="strategy-checks"></div>
-            <div class="strategy-picker-actions">
-              <button id="btnSelectAllStrategies" type="button">全選</button>
-              <button id="btnClearStrategies" type="button">清除</button>
-            </div>
-          </fieldset>
-          <label>開始日期<input id="backtestStartDate" name="startDate" type="date" required /></label>
-          <label>結束日期<input id="backtestEndDate" name="endDate" type="date" required /></label>
-          <label>初始資金<input name="initialCash" type="number" min="1" value="300000" required /></label>
-          <div id="backtestStrategyInfo" class="strategy-model-info full"></div>
-          <div class="form-actions full"><button type="submit">開始回測</button><span id="backtestMessage" class="muted"></span></div>
-        </form>
-        <div class="panel"><h2>最近回測</h2><div id="backtestRunsBody" class="v11-list"></div><div class="list-actions"><button id="btnLoadMoreBacktestRuns" type="button" hidden>載入更多</button></div></div>
-        <div id="backtestDiagnostics" class="notice-band diagnostic-band" hidden></div>
-        <div id="backtestComparisonPanel" class="panel" hidden>
-          <div class="panel-header"><div><h2>模型績效比較</h2><div class="muted">最高報酬只代表此回測區間，不代表下一次仍會勝出</div></div></div>
-          <div class="table-wrap"><table><thead><tr><th>模型</th><th>總報酬率</th><th>總損益</th><th>交易次數</th><th>勝率</th><th>平均持有日</th><th>最大回撤</th><th>Profit Factor</th><th>明細</th></tr></thead><tbody id="backtestComparisonBody"></tbody></table></div>
-        </div>
-        <div id="backtestResultStrategy" class="result-caption" hidden></div>
-        <div id="backtestSummary" class="grid-4"></div>
-        <div class="panel"><h2>資產曲線</h2><div id="backtestChartLegend" class="chart-legend"></div><div class="backtest-chart"><svg id="backtestChart" viewBox="0 0 920 320" preserveAspectRatio="none"></svg></div></div>
-        <div class="panel"><h2>每檔股票績效</h2><div class="table-wrap"><table><thead><tr><th>股票</th><th>交易次數</th><th>勝率</th><th>累計報酬</th><th>平均報酬</th><th>Profit Factor</th></tr></thead><tbody id="backtestSymbolsBody"></tbody></table></div></div>
-        <div class="panel"><h2>回測交易明細</h2><div class="table-wrap"><table><thead><tr><th>日期</th><th>動作</th><th>股票</th><th>股數</th><th>價格</th><th>損益</th><th>報酬率</th><th>原因</th></tr></thead><tbody id="backtestTradesBody"></tbody></table></div></div>
-      </section>
-
       <section id="portfolioPage" class="page">
-        <div class="panel">
-          <div class="panel-header">
-            <div><h2>快速買賣</h2><div class="muted">交易會先顯示於畫面，再由後端背景更新庫存。</div></div>
+        <div class="portfolio-page-header">
+          <div>
+            <h2>我的庫存</h2>
+            <div id="portfolioStatus" class="muted">讀取最新庫存...</div>
           </div>
-          <form id="transactionForm" class="form-grid portfolio-trade-form">
-            <label>類型<select name="action"><option value="BUY">買進</option><option value="SELL">賣出</option></select></label>
-            <label>股票代號<input name="symbol" type="text" inputmode="numeric" required placeholder="2330" /></label>
-            <label>股數<input name="quantity" type="number" step="0.0001" min="0.0001" required /></label>
-            <label>價格<input name="price" type="number" step="0.0001" min="0.0001" required /></label>
-            <label>日期<input name="date" type="date" required /></label>
-            <label>備註<input name="note" placeholder="長期投資 / 短線觀察" /></label>
-            <div class="form-actions full"><button type="submit">新增交易</button><span id="formMessage" class="muted"></span></div>
-          </form>
+          <button id="openQuickTradeBtn" type="button" data-action="open-trade-modal">＋ 快速買賣</button>
         </div>
 
-        <div id="portfolioSummary" class="grid-4"></div>
+        <div id="portfolioSummary" class="portfolio-summary-grid"></div>
 
         <div class="panel">
           <div class="panel-header">
             <div>
-              <h2>我的庫存</h2>
-              <div id="portfolioStatus" class="muted">讀取最新庫存...</div>
+              <h2>持有部位</h2>
+              <div class="muted">今日損益以最近兩個交易日收盤價計算</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -313,14 +212,14 @@
                   <th>股票</th>
                   <th>股數</th>
                   <th>平均成本</th>
-                  <th>收盤價</th>
+                  <th>現價</th>
+                  <th>今日漲跌</th>
+                  <th>今日損益</th>
                   <th>市值</th>
                   <th>未實現損益</th>
-                  <th>報酬率</th>
-                  <th>技術分數</th>
-                  <th>風險分數</th>
+                  <th>累積報酬率</th>
                   <th>技術狀態</th>
-                  <th>資料日期</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody id="portfolioBody"></tbody>
@@ -411,6 +310,48 @@
         <label>月份<input name="months" type="number" min="1" max="60" value="12" required /></label>
         <label>指定股票代號（可留空）<input name="symbols" type="text" placeholder="2330, 006208" /></label>
         <div class="form-actions"><button type="submit">開始回補</button><span id="backfillMessage" class="muted"></span></div>
+      </form>
+    </section>
+  </div>
+
+  <div id="notificationSheet" class="floating-sheet notification-sheet" hidden>
+    <button class="floating-sheet-backdrop" type="button" data-action="close-notifications" aria-label="關閉通知"></button>
+    <section class="floating-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="notificationSheetTitle">
+      <header class="floating-sheet-header">
+        <div><div class="detail-sheet-kicker">盤後提醒</div><h2 id="notificationSheetTitle">通知</h2></div>
+        <button class="icon-button" type="button" data-action="close-notifications" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <div class="notification-toolbar">
+        <button id="btnMarkAllNotificationsRead" type="button">全部已讀</button>
+        <button id="btnClearNotificationSheet" class="danger-btn" type="button">清除通知</button>
+      </div>
+      <div id="notificationSheetBody" class="floating-sheet-body v11-list"></div>
+    </section>
+  </div>
+
+  <div id="tradeModal" class="floating-sheet trade-modal" hidden>
+    <button class="floating-sheet-backdrop" type="button" data-action="close-trade-modal" aria-label="關閉快速買賣"></button>
+    <section class="floating-sheet-panel trade-modal-panel" role="dialog" aria-modal="true" aria-labelledby="tradeModalTitle">
+      <header class="floating-sheet-header">
+        <div><div class="detail-sheet-kicker">交易紀錄</div><h2 id="tradeModalTitle">快速買賣</h2><div id="tradeStockName" class="muted"></div></div>
+        <button class="icon-button" type="button" data-action="close-trade-modal" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <form id="transactionForm" class="form-grid trade-modal-form">
+        <fieldset class="trade-action-field full">
+          <legend>類型</legend>
+          <div class="segmented-control">
+            <label><input type="radio" name="action" value="BUY" checked /><span>買進</span></label>
+            <label><input type="radio" name="action" value="SELL" /><span>賣出</span></label>
+          </div>
+        </fieldset>
+        <label>股票代號<input name="symbol" type="text" inputmode="numeric" required placeholder="2330" /></label>
+        <label>股數<input name="quantity" type="number" step="0.0001" min="0.0001" required /></label>
+        <label>價格<input name="price" type="number" step="0.0001" min="0.0001" required /></label>
+        <label>日期<input name="date" type="date" required /></label>
+        <label>手續費<input name="fee" type="number" step="0.01" min="0" value="0" /></label>
+        <label>交易稅<input name="tax" type="number" step="0.01" min="0" value="0" /></label>
+        <label class="full">備註<input name="note" placeholder="選填" /></label>
+        <div class="form-actions full"><button type="submit">儲存交易</button><span id="formMessage" class="muted"></span></div>
       </form>
     </section>
   </div>

@@ -164,6 +164,10 @@ h1, h2, h3 {
   display: block;
 }
 
+.page[hidden] {
+  display: none !important;
+}
+
 .grid-4 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -233,7 +237,7 @@ h1, h2, h3 {
 }
 
 .candidate-section:last-child table {
-  min-width: 1360px;
+  min-width: 1040px;
 }
 
 .candidate-reason {
@@ -1766,6 +1770,167 @@ body.modal-open .explain-modal-body * {
   margin-top: 4px;
 }
 
+.portfolio-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.portfolio-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.portfolio-row-actions {
+  display: flex;
+  gap: 6px;
+  min-width: 150px;
+}
+
+.portfolio-row-actions button {
+  min-width: 42px;
+  min-height: 36px;
+  padding: 7px 10px;
+}
+
+.floating-sheet[hidden] {
+  display: none;
+}
+
+.floating-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 1250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.floating-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(2, 6, 23, 0.76);
+}
+
+.floating-sheet-backdrop:hover,
+.floating-sheet-backdrop:focus,
+.floating-sheet-backdrop:active {
+  background: rgba(2, 6, 23, 0.76);
+  outline: none;
+}
+
+.floating-sheet-panel {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  max-height: min(88vh, 760px);
+  overflow: hidden;
+  border: 1px solid #263652;
+  border-radius: 8px;
+  background: #0d1629;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+
+.floating-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #22304a;
+}
+
+.floating-sheet-body {
+  max-height: calc(88vh - 150px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px 20px 20px;
+}
+
+.notification-sheet {
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding-top: 82px;
+}
+
+.notification-sheet .floating-sheet-panel {
+  width: min(460px, 100%);
+}
+
+.notification-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 0;
+}
+
+.trade-modal-form {
+  max-height: calc(88vh - 88px);
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.trade-action-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.trade-action-field legend {
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #071022;
+}
+
+.segmented-control label {
+  cursor: pointer;
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control span {
+  display: grid;
+  place-items: center;
+  min-height: 42px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.segmented-control input:checked + span {
+  background: #164e63;
+  color: #e0f2fe;
+}
+
+body.floating-sheet-open {
+  overflow: hidden;
+}
+
 .disclosure-panel {
   padding: 0;
   overflow: hidden;
@@ -2303,9 +2468,48 @@ body.detail-sheet-open {
   .dashboard-primary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .portfolio-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
+  .portfolio-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .portfolio-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .floating-sheet,
+  .notification-sheet {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .floating-sheet-panel,
+  .notification-sheet .floating-sheet-panel {
+    width: 100%;
+    max-height: 88vh;
+    border-radius: 8px 8px 0 0;
+  }
+
+  .floating-sheet-body,
+  .trade-modal-form {
+    max-height: calc(88vh - 142px);
+  }
+
+  .notification-toolbar {
+    justify-content: stretch;
+  }
+
+  .notification-toolbar button {
+    flex: 1 1 0;
+  }
+
   .dashboard-primary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
@@ -2461,11 +2665,17 @@ body.mobile-sheet-open {
 
   .nav-btn[data-page="dashboard"],
   .nav-btn[data-page="candidates"],
-  .nav-btn[data-page="backtest"],
+  .nav-btn[data-page="analysis"],
   .nav-btn[data-page="portfolio"],
   .mobile-more-btn {
     display: block;
   }
+
+  .nav-btn[data-page="dashboard"] { order: 1; }
+  .nav-btn[data-page="candidates"] { order: 2; }
+  .nav-btn[data-page="analysis"] { order: 3; }
+  .nav-btn[data-page="portfolio"] { order: 4; }
+  .mobile-more-btn { order: 5; }
 
   .top-actions #btnUpdateDaily,
   .top-actions #btnBackfillHistory,
