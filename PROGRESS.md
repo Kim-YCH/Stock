@@ -798,8 +798,7 @@ Known Issues：
 - Dashboard 與 Portfolio 統一以前兩筆 EOD 價格計算前一交易日收盤，不再從 sparkline 推測。
 - 大盤歷史不足時改用 `UrlFetchApp.fetchAll()` 平行抓取 6 個月份，移除序列 sleep。
 - 降低首頁、市場總覽與分析快取的全表讀取範圍；保留需要完整主鍵資料的寫入流程。
-- 所有外部寫入 action 在 `doGet` 統一驗證 API token，後端未設定 token 時預設拒絕寫入。
-- 寫入金鑰改由使用者輸入並只存目前瀏覽器 localStorage，不再寫入公開 `js/config.js`。
+- 寫入金鑰功能暫不啟用，前端新增、刪除與更新流程不要求輸入 token。
 - 根目錄 `app.gs` 加入 `.gitignore`，避免私人 Apps Script 被 `git add .` 帶入。
 - 移除不完整 PWA 宣告與 Service Worker 更新程式。
 - 合併為單一 `DOMContentLoaded` 初始化流程與單一 pages 定義。
@@ -814,5 +813,14 @@ Known Issues：
 
 - 同步更新 `app.gs`、`js/config.js` 的版本號。
 - 同步更新 `index.html` 內 CSS 與四個 JavaScript 的 `?v=` cache key。
-- 在 Apps Script 指令碼屬性設定 `API_TOKEN`，並重新部署 Web App。
-- 在瀏覽器按「設定寫入金鑰」，輸入與後端相同的 token。
+- 重新部署 Apps Script Web App，並確認前端 `API_BASE_URL` 指向最新部署。
+
+### v11.7 Performance Release / No Write Key
+
+完成：
+
+- 前後端版本更新為 v11.7，並同步更新 CSS、JavaScript 與 Dashboard localStorage cache key。
+- 移除前端「設定寫入金鑰」按鈕與 localStorage token 邏輯。
+- 新增交易、刪除交易、增刪關注、更新盤後資料與歷史回補不再要求輸入金鑰。
+- 保留 v11.6 完成的 Dashboard 分塊快取、Sheet 讀取優化、平行大盤歷史請求與前端死碼清理。
+- Apps Script 維持本機 ignored 私人檔案，不納入 Git commit。

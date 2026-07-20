@@ -1,11 +1,5 @@
 const Api = (() => {
   const inflightRequests = new Map();
-  const WRITE_TOKEN_KEY = "stocklab_api_write_token";
-  const WRITE_ACTIONS = new Set([
-    "markNotificationRead", "markAllNotificationsRead", "clearNotifications",
-    "refreshPortfolio", "addTransaction", "deleteTransaction", "lookupStock",
-    "addWatchlist", "removeWatchlist", "updateDailyPrices", "backfillHistoricalPrices"
-  ]);
 
   function isConfigured() {
     return typeof API_BASE_URL !== "undefined" && Boolean(API_BASE_URL && API_BASE_URL.trim());
@@ -13,25 +7,6 @@ const Api = (() => {
 
   function requestKey(action, params) {
     return action + ":" + JSON.stringify(params || {});
-  }
-
-  function getWriteToken() {
-    try {
-      return String(localStorage.getItem(WRITE_TOKEN_KEY) || "");
-    } catch (error) {
-      return "";
-    }
-  }
-
-  function setWriteToken(token) {
-    try {
-      const value = String(token || "").trim();
-      if (value) localStorage.setItem(WRITE_TOKEN_KEY, value);
-      else localStorage.removeItem(WRITE_TOKEN_KEY);
-      return Boolean(value);
-    } catch (error) {
-      return false;
-    }
   }
 
   function getOnce(action, params = {}, options = {}) {
@@ -54,17 +29,6 @@ const Api = (() => {
       const url = new URL(API_BASE_URL);
       url.searchParams.set("action", action);
       url.searchParams.set("callback", callbackName);
-
-      const forceWrite = ["dashboard", "analysis", "stockDetail"].includes(action)
-        && ["1", "true", "yes"].includes(String(params.force || "").toLowerCase());
-      if (WRITE_ACTIONS.has(action) || forceWrite) {
-        const token = getWriteToken();
-        if (!token) {
-          reject(new Error("請先設定寫入金鑰"));
-          return;
-        }
-        url.searchParams.set("token", token);
-      }
 
       Object.entries(params || {}).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
@@ -108,8 +72,6 @@ const Api = (() => {
 
   return {
     isConfigured,
-    getWriteToken,
-    setWriteToken,
     getBackendVersion: () => getOnce("version"),
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getCandidates: () => getOnce("candidates"),

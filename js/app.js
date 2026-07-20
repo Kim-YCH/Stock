@@ -85,7 +85,7 @@ const PAGE_ROUTE_ALIASES = Object.assign({}, LEGACY_ROUTE_REDIRECTS, {
 });
 
 const CACHE_KEYS = {
-  dashboard: "stocklab_cache_dashboard_v116_daily_change",
+  dashboard: "stocklab_cache_dashboard_v117_daily_change",
   transactions: "stocklab_cache_transactions_v2"
 };
 const analysisMemoryCache = new Map();
@@ -155,7 +155,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
   document.getElementById("btnBackfillHistory").addEventListener("click", openBackfillSheet);
-  document.getElementById("btnApiToken").addEventListener("click", configureWriteToken);
   document.getElementById("btnRefreshVersion").addEventListener("click", refreshAppVersion);
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
   document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
@@ -204,14 +203,6 @@ function detectDeviceMode() {
   const isMobile = window.matchMedia("(max-width: 760px), (pointer: coarse)").matches;
   document.body.classList.toggle("device-mobile", isMobile);
   document.body.classList.toggle("device-desktop", !isMobile);
-}
-
-function configureWriteToken() {
-  const current = Api.getWriteToken();
-  const value = window.prompt("請輸入 Apps Script 寫入金鑰；留空可清除。", current);
-  if (value === null) return;
-  const configured = Api.setWriteToken(value);
-  showToast(configured ? "寫入金鑰已儲存在此瀏覽器" : "已清除寫入金鑰", "success");
 }
 
 
@@ -309,7 +300,7 @@ async function refreshAppVersion() {
   try {
     clearPageMemoryCache();
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith("stocklab_") && key !== "stocklab_api_write_token") localStorage.removeItem(key);
+      if (key.startsWith("stocklab_")) localStorage.removeItem(key);
     });
 
   } catch (error) {
