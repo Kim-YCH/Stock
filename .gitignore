@@ -1,4 +1,5 @@
 # Backend / secrets - do not upload to GitHub
+app.gs
 apps_script/
 backend/
 private_backend/

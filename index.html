@@ -7,7 +7,6 @@
   <meta name="theme-color" content="#050816" />
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="css/style.css?v=11.6" />
 </head>
 <body>
@@ -15,7 +14,7 @@
     <aside class="sidebar">
       <div class="logo">StockLab</div>
       <div class="version-stack">
-        <div class="app-version" id="appVersion">前端 v11.6</div>
+        <div class="app-version" id="appVersion">前端 --</div>
         <div class="app-version backend-version is-pending" id="backendVersion">後端 檢查中</div>
       </div>
       <nav class="nav">
@@ -38,6 +37,7 @@
         <div class="top-actions">
           <button id="btnUpdateDaily">更新盤後資料</button>
           <button id="btnBackfillHistory">回補歷史資料</button>
+          <button id="btnApiToken" type="button">設定寫入金鑰</button>
           <button id="btnRefreshVersion">更新版本</button>
           <button id="btnNotificationCenter" class="notification-button" type="button" aria-label="開啟通知中心">通知 <span id="notificationUnreadCount" class="notification-count" hidden>0</span></button>
           <div class="muted" id="apiStatus">尚未連線</div>

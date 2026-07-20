@@ -1,5 +1,11 @@
 const Api = (() => {
   const inflightRequests = new Map();
+  const WRITE_TOKEN_KEY = "stocklab_api_write_token";
+  const WRITE_ACTIONS = new Set([
+    "markNotificationRead", "markAllNotificationsRead", "clearNotifications",
+    "refreshPortfolio", "addTransaction", "deleteTransaction", "lookupStock",
+    "addWatchlist", "removeWatchlist", "updateDailyPrices", "backfillHistoricalPrices"
+  ]);
 
   function isConfigured() {
     return typeof API_BASE_URL !== "undefined" && Boolean(API_BASE_URL && API_BASE_URL.trim());
@@ -7,6 +13,25 @@ const Api = (() => {
 
   function requestKey(action, params) {
     return action + ":" + JSON.stringify(params || {});
+  }
+
+  function getWriteToken() {
+    try {
+      return String(localStorage.getItem(WRITE_TOKEN_KEY) || "");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function setWriteToken(token) {
+    try {
+      const value = String(token || "").trim();
+      if (value) localStorage.setItem(WRITE_TOKEN_KEY, value);
+      else localStorage.removeItem(WRITE_TOKEN_KEY);
+      return Boolean(value);
+    } catch (error) {
+      return false;
+    }
   }
 
   function getOnce(action, params = {}, options = {}) {
@@ -30,8 +55,16 @@ const Api = (() => {
       url.searchParams.set("action", action);
       url.searchParams.set("callback", callbackName);
 
-      const token = typeof API_TOKEN === "undefined" ? "" : API_TOKEN;
-      if (token) url.searchParams.set("token", token);
+      const forceWrite = ["dashboard", "analysis", "stockDetail"].includes(action)
+        && ["1", "true", "yes"].includes(String(params.force || "").toLowerCase());
+      if (WRITE_ACTIONS.has(action) || forceWrite) {
+        const token = getWriteToken();
+        if (!token) {
+          reject(new Error("請先設定寫入金鑰"));
+          return;
+        }
+        url.searchParams.set("token", token);
+      }
 
       Object.entries(params || {}).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
@@ -75,30 +108,17 @@ const Api = (() => {
 
   return {
     isConfigured,
+    getWriteToken,
+    setWriteToken,
     getBackendVersion: () => getOnce("version"),
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
-    getStrategyModels: () => getOnce("strategyModels"),
     getCandidates: () => getOnce("candidates"),
-    getCandidatesPage: () => getOnce("candidatesPage"),
-    getCandidateLeaderboard: () => getOnce("candidateLeaderboard"),
     getMarketSummary: () => getOnce("marketSummary"),
-    getStrategyResearch: () => getOnce("strategyResearch"),
-    getStrategyHealth: () => getOnce("strategyHealth"),
-    getStats: () => getOnce("stats"),
     getNotifications: (params = {}) => getOnce("notifications", params),
     getNotificationSummary: () => getOnce("notificationSummary"),
     markNotificationRead: (id) => jsonp("markNotificationRead", { id }),
     markAllNotificationsRead: () => jsonp("markAllNotificationsRead"),
     clearNotifications: () => jsonp("clearNotifications"),
-    getStockDetail: (symbol, force = false) => getOnce("stockDetail", { symbol, force: force ? "1" : undefined }, { force }),
-    getPaperSummary: (params = {}) => getOnce("paperSummary", Object.assign({ limit: 50 }, params)),
-    createPaperStrategy: (data) => jsonp("createPaperStrategy", data),
-    togglePaperStrategy: (strategyId, enabled) => jsonp("togglePaperStrategy", { strategyId, enabled }),
-    runPaperTrading: () => jsonp("runPaperTrading"),
-    runBacktest: (data) => jsonp("runBacktest", data),
-    runBacktestComparison: (data) => jsonp("runBacktestComparison", data),
-    getBacktestRuns: (params = {}) => getOnce("backtestRuns", Object.assign({ limit: 20 }, params)),
-    getBacktestResult: (runId, tradesLimit = 100) => getOnce("backtestResult", { runId, tradesLimit }),
     getPortfolio: (force = false) => getOnce("portfolio", {}, { force }),
     refreshPortfolio: () => jsonp("refreshPortfolio"),
     getAnalysis: (symbol, force = false) => getOnce("analysis", { symbol, force: force ? "1" : undefined }, { force }),
@@ -108,10 +128,7 @@ const Api = (() => {
     removeWatchlist: (symbol, name = "") => jsonp("removeWatchlist", { symbol, name }),
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
-    calculateAllAnalysis: () => jsonp("calculateAllAnalysis"),
-    runDailyDerivedCaches: () => jsonp("runDailyDerivedCaches"),
     addTransaction: (data) => jsonp("addTransaction", data),
-    deleteTransaction: (id) => jsonp("deleteTransaction", { id }),
-    recalculateAfterTransaction: () => jsonp("recalculateAfterTransaction")
+    deleteTransaction: (id) => jsonp("deleteTransaction", { id })
   };
 })();

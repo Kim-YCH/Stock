@@ -786,3 +786,33 @@ Known Issues：
 
 - 策略、回測與虛擬交易資料表仍保留，但目前不執行、不讀取也不顯示
 - 若個別股票歷史價格不足兩個交易日，今日漲跌會顯示資料不足
+
+### v11.6 Optimization Pass
+
+完成：
+
+- Dashboard payload 移除重複趨勢資料，迷你線圖縮為 30 筆且四捨五入至小數第 2 位。
+- DashboardCache 改為多欄分塊儲存，ScriptCache 改為 UTF-8 安全分塊，TTL 延長為 6 小時。
+- DashboardCache 在單次 Apps Script 執行中只讀一次，快取寫入錯誤不再靜默忽略。
+- 首頁建立快取時回傳 payload 字數、Sheet 分塊數與 ScriptCache 分塊數診斷資訊。
+- Dashboard 與 Portfolio 統一以前兩筆 EOD 價格計算前一交易日收盤，不再從 sparkline 推測。
+- 大盤歷史不足時改用 `UrlFetchApp.fetchAll()` 平行抓取 6 個月份，移除序列 sleep。
+- 降低首頁、市場總覽與分析快取的全表讀取範圍；保留需要完整主鍵資料的寫入流程。
+- 所有外部寫入 action 在 `doGet` 統一驗證 API token，後端未設定 token 時預設拒絕寫入。
+- 寫入金鑰改由使用者輸入並只存目前瀏覽器 localStorage，不再寫入公開 `js/config.js`。
+- 根目錄 `app.gs` 加入 `.gitignore`，避免私人 Apps Script 被 `git add .` 帶入。
+- 移除不完整 PWA 宣告與 Service Worker 更新程式。
+- 合併為單一 `DOMContentLoaded` 初始化流程與單一 pages 定義。
+- 移除已無 UI 入口的策略模型、回測、虛擬交易、排行、策略研究、健檢、統計前端死碼與 API wrapper。
+
+待 Apps Script 實測：
+
+- 執行 `testIntradayQuoteSource_()`，確認 Google IP 可取得 TWSE MIS JSON；驗證前不接入正式即時報價。
+- 個股歷史回補仍保留 TWSE / TPEx fallback 的序列容錯，後續應另做保留 fallback 語意的批次化。
+
+發版檢查清單：
+
+- 同步更新 `app.gs`、`js/config.js` 的版本號。
+- 同步更新 `index.html` 內 CSS 與四個 JavaScript 的 `?v=` cache key。
+- 在 Apps Script 指令碼屬性設定 `API_TOKEN`，並重新部署 Web App。
+- 在瀏覽器按「設定寫入金鑰」，輸入與後端相同的 token。

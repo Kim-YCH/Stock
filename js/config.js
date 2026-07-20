@@ -1,4 +1,3 @@
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbx8eDsjkwTr-jU603DqL2L-PI5-DW_btmdKNP3pHXakczkMBBpRouLVfi59ss7blT-Y/exec"
-const API_TOKEN = "";
-
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbzQz-MXFq4jnbEOXihAvTgXyTnVGXbi2siqXR5RvZyx9GhhGZPKaDyPWuJxmGOpGvk/exec"
+// Release checklist: keep APP_VERSION and every index.html ?v= cache key in sync.
 const APP_VERSION = "v11.6";
