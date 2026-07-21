@@ -1,8 +1,10 @@
-# Backend / secrets - do not upload to GitHub
+# Google Apps Script 後端原始碼只保存在私有庫 (GitLab: kim_hung/Stock)。
 app.gs
 apps_script/
 backend/
 private_backend/
+
+# 機密資料
 secrets/
 .env
 *.secret
@@ -10,5 +12,14 @@ secrets/
 credentials.json
 token.json
 
-# Old frontend folder - root files are used for GitHub Pages
+# 這個庫是「已發佈的網站」本身：只放瀏覽器實際載入的檔案。
+# 開發文件、規劃筆記與資料表結構都住在私有庫。在這裡忽略它們，
+# 可以避免整包資料夾被隨手複製時，把內部文件一起公開出去。
+docs/
+database_schema/
+PROGRESS.md
+README_START_HERE.txt
+*_NOTES.txt
+
+# 舊的前端資料夾，根目錄檔案才是 GitHub Pages 使用的版本
 frontend/
