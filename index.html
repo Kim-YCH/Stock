@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#050816" />
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/style.css?v=11.7" />
+  <link rel="stylesheet" href="css/style.css?v=11.12" />
 </head>
 <body>
   <div class="app">
@@ -36,6 +36,7 @@
         </div>
         <div class="top-actions">
           <button id="btnUpdateDaily">更新盤後資料</button>
+          <button id="btnRunDerived" title="不依賴背景排程，直接重算技術指標與所有衍生快取">重算指標</button>
           <button id="btnBackfillHistory">回補歷史資料</button>
           <button id="btnRefreshVersion">更新版本</button>
           <button id="btnNotificationCenter" class="notification-button" type="button" aria-label="開啟通知中心">通知 <span id="notificationUnreadCount" class="notification-count" hidden>0</span></button>
@@ -203,6 +204,7 @@
               <h2>持有部位</h2>
               <div class="muted">今日損益以最近兩個交易日收盤價計算</div>
             </div>
+            <button id="btnRefreshPortfolio" type="button">重新計算</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -306,7 +308,7 @@
       </header>
       <form id="backfillForm" class="backfill-form">
         <div class="inline-warning">回補歷史資料可能需要較久，開始後請勿關閉頁面。</div>
-        <label>月份<input name="months" type="number" min="1" max="60" value="12" required /></label>
+        <label>月份<input name="months" type="number" min="1" max="36" value="12" required /></label>
         <label>指定股票代號（可留空）<input name="symbols" type="text" placeholder="2330, 006208" /></label>
         <div class="form-actions"><button type="submit">開始回補</button><span id="backfillMessage" class="muted"></span></div>
       </form>
@@ -325,6 +327,7 @@
         <button id="btnClearNotificationSheet" class="danger-btn" type="button">清除通知</button>
       </div>
       <div id="notificationSheetBody" class="floating-sheet-body v11-list"></div>
+      <button id="btnLoadMoreNotifications" type="button" hidden>載入更多</button>
     </section>
   </div>
 
@@ -368,9 +371,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script src="js/config.js?v=11.7"></script>
-  <script src="js/api.js?v=11.7"></script>
-  <script src="js/indicator-explain.js?v=11.7"></script>
-  <script src="js/app.js?v=11.7"></script>
+  <script src="js/config.js?v=11.12"></script>
+  <script src="js/api.js?v=11.12"></script>
+  <script src="js/indicator-explain.js?v=11.12"></script>
+  <script src="js/app.js?v=11.12"></script>
 </body>
 </html>

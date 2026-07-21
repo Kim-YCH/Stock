@@ -85,8 +85,12 @@ const PAGE_ROUTE_ALIASES = Object.assign({}, LEGACY_ROUTE_REDIRECTS, {
 });
 
 const CACHE_KEYS = {
-  dashboard: "stocklab_cache_dashboard_v117_daily_change",
-  transactions: "stocklab_cache_transactions_v2"
+  dashboard: "stocklab_cache_dashboard_schema2",
+  transactions: "stocklab_cache_transactions_v1111"
+};
+const CACHE_TTL_MS = {
+  [CACHE_KEYS.dashboard]: 7 * 24 * 60 * 60 * 1000,
+  [CACHE_KEYS.transactions]: 24 * 60 * 60 * 1000
 };
 const analysisMemoryCache = new Map();
 const analysisRequests = new Map();
@@ -117,6 +121,7 @@ let notificationCacheLoadedAt = 0;
 const watchlistSortState = { key: "", direction: "asc" };
 
 document.addEventListener("DOMContentLoaded", () => {
+  cleanupLocalCaches();
   setAppVersionLabel();
   loadBackendVersion();
   detectDeviceMode();
@@ -143,6 +148,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     loadAnalysis(symbol, true);
   });
+  // 庫存頁的強制重算入口。changePage 呼叫 loader 不帶參數，
+  // 所以在這之前沒有任何方式能送出 force=1 讓後端重算庫存。
+  const btnRefreshPortfolio = document.getElementById("btnRefreshPortfolio");
+  if (btnRefreshPortfolio) {
+    btnRefreshPortfolio.addEventListener("click", () => {
+      pageDataCache.portfolio = null;
+      setPortfolioStatus("重新計算中...", "warning");
+      loadPortfolio({ force: true });
+    });
+  }
+
   renderAnalysisLineControls();
   document.getElementById("analysisLineControls").addEventListener("change", onAnalysisLineToggle);
 
@@ -154,6 +170,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
+  const btnRunDerived = document.getElementById("btnRunDerived");
+  if (btnRunDerived) btnRunDerived.addEventListener("click", onRunDerivedNow);
   document.getElementById("btnBackfillHistory").addEventListener("click", openBackfillSheet);
   document.getElementById("btnRefreshVersion").addEventListener("click", refreshAppVersion);
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
@@ -176,7 +194,11 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("backfillForm").addEventListener("submit", onBackfillHistoricalPrices);
 
   const dateInput = document.querySelector("#transactionForm input[name='date']");
-  if (dateInput) dateInput.valueAsDate = new Date();
+  if (dateInput) {
+    dateInput.valueAsDate = new Date();
+    dateInput.max = formatLocalDate(new Date());
+  }
+  document.addEventListener("keydown", onGlobalEscape);
 
   setApiStatus();
   const initialRoute = decodeURIComponent(String(window.location.hash || "").replace(/^#/, ""));
@@ -191,11 +213,12 @@ document.addEventListener("DOMContentLoaded", () => {
   if (markAllButton) markAllButton.addEventListener("click", markAllNotificationsRead);
   const moreTransactions = document.getElementById("btnLoadMoreTransactions");
   if (moreTransactions) moreTransactions.addEventListener("click", () => loadTransactions({ append: true }));
+  const moreNotifications = document.getElementById("btnLoadMoreNotifications");
+  if (moreNotifications) moreNotifications.addEventListener("click", () => loadNotifications({ append: true }));
   const mobileMore = document.getElementById("btnMobileMore");
   if (mobileMore) mobileMore.addEventListener("click", openMobileMore);
   window.addEventListener("hashchange", () => changePage(window.location.hash, { replaceHash: true }));
   buildMobileMoreLinks();
-  loadNotificationSummary();
 });
 
 
@@ -205,6 +228,45 @@ function detectDeviceMode() {
   document.body.classList.toggle("device-desktop", !isMobile);
 }
 
+
+/**
+ * 不依賴背景排程，直接把技術指標與所有衍生快取重算一次。
+ * 環境不跑 time-driven trigger 時，這是唯一能把指標算出來的路徑。
+ */
+async function onRunDerivedNow() {
+  const btn = document.getElementById("btnRunDerived");
+  if (!Api.isConfigured()) {
+    setApiStatus("尚未設定 API_BASE_URL，無法重算");
+    return;
+  }
+
+  btn.disabled = true;
+  const oldText = btn.textContent;
+  btn.textContent = "重算中...";
+  setApiStatus("正在重算技術指標與衍生快取，標的多時需要數十秒");
+
+  try {
+    const result = await Api.runDerivedNow();
+    invalidateFrontendQuoteCaches();
+    pageDataCache.dashboard = null;
+    clearCache(CACHE_KEYS.dashboard);
+    await loadDashboard({ force: true });
+    const failed = [];
+    const phases = result.phases || {};
+    Object.keys(phases).forEach(name => { if (phases[name] && phases[name].ok === false) failed.push(name); });
+    const text = failed.length
+      ? `重算完成，但有階段失敗：${failed.join("、")}`
+      : "技術指標與衍生快取已重算完成";
+    setApiStatus(text);
+    showToast(text, failed.length ? "warning" : "success");
+  } catch (err) {
+    setApiStatus("重算失敗：" + err.message);
+    showToast("重算失敗：" + err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+}
 
 async function onUpdateDailyPrices() {
   const btn = document.getElementById("btnUpdateDaily");
@@ -257,8 +319,8 @@ async function onBackfillHistoricalPrices(event) {
 
   const data = Object.fromEntries(new FormData(form).entries());
   const months = Number(data.months || 12);
-  if (!Number.isFinite(months) || months <= 0) {
-    message.textContent = "回補月份格式錯誤";
+  if (!Number.isFinite(months) || months < 1 || months > 36) {
+    message.textContent = "回補月份須介於 1 到 36";
     return;
   }
   const normalizedSymbols = normalizeSymbolListInput(data.symbols || "");
@@ -330,6 +392,11 @@ function readCache(key) {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    const expiresAt = Number(parsed && parsed.expiresAt || 0);
+    if (!expiresAt || expiresAt <= Date.now()) {
+      localStorage.removeItem(key);
+      return null;
+    }
     return parsed && parsed.data ? parsed.data : null;
   } catch (err) {
     return null;
@@ -338,12 +405,53 @@ function readCache(key) {
 
 function writeCache(key, data) {
   try {
+    const ttl = CACHE_TTL_MS[key] || 60 * 60 * 1000;
     localStorage.setItem(key, JSON.stringify({
       savedAt: Date.now(),
+      expiresAt: Date.now() + ttl,
       data
     }));
+    return true;
   } catch (err) {
-    // localStorage 可能被瀏覽器限制；失敗時不影響主要流程。
+    console.warn("StockLab cache write failed", err);
+    showToast("瀏覽器快取寫入失敗，重新整理後可能需要再次載入資料", "warning");
+    return false;
+  }
+}
+
+function cleanupLocalCaches() {
+  migrateLegacyDashboardCache();
+  const activeKeys = new Set(Object.values(CACHE_KEYS));
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (!key.startsWith("stocklab_cache_")) return;
+      if (!activeKeys.has(key)) { localStorage.removeItem(key); return; }
+      readCache(key);
+    });
+  } catch (err) {
+    console.warn("StockLab cache cleanup failed", err);
+  }
+}
+
+function migrateLegacyDashboardCache() {
+  try {
+    if (localStorage.getItem(CACHE_KEYS.dashboard)) return;
+    const maxAge = 7 * 24 * 60 * 60 * 1000;
+    let newest = null;
+    Object.keys(localStorage).forEach(key => {
+      if (!key.startsWith("stocklab_cache_dashboard_") || key === CACHE_KEYS.dashboard) return;
+      try {
+        const envelope = JSON.parse(localStorage.getItem(key) || "null");
+        const data = envelope && envelope.data;
+        const savedAt = Number(envelope && envelope.savedAt || 0);
+        if (!data || !Array.isArray(data.market) || !Array.isArray(data.watchlist)) return;
+        if (!savedAt || Date.now() - savedAt > maxAge) return;
+        if (!newest || savedAt > newest.savedAt) newest = { savedAt, data };
+      } catch (err) {}
+    });
+    if (newest) writeCache(CACHE_KEYS.dashboard, newest.data);
+  } catch (err) {
+    console.warn("StockLab dashboard cache migration failed", err);
   }
 }
 
@@ -422,7 +530,10 @@ function getCachedDashboard() {
 }
 
 function saveDashboardCache(data) {
-  writeCache(CACHE_KEYS.dashboard, data);
+  const cacheable = Object.assign({}, data, {
+    watchlist: (data.watchlist || []).filter(item => item && item.pending !== true)
+  });
+  writeCache(CACHE_KEYS.dashboard, cacheable);
 }
 
 function getCachedTransactions() {
@@ -569,6 +680,17 @@ async function onSubmitWatchlist(event) {
 }
 
 async function onDocumentClick(event) {
+  if (event.target.closest('[data-action="prompt-access-key"]')) {
+    // 只有後端有設 STOCKLAB_API_TOKEN 時才會走到這裡。
+    // 沒設的話前端不會詢問金鑰，這個畫面也不會出現。
+    if (Api.promptAccessKey && Api.promptAccessKey()) {
+      pageDataCache.dashboard = null;
+      pageDataCache.portfolio = null;
+      pageDataCache.transactions = null;
+      changePage(window.location.hash || "dashboard", { replaceHash: true });
+    }
+    return;
+  }
   if (event.target.closest('[data-action="close-trade-modal"]')) {
     closeTradeModal();
     return;
@@ -722,7 +844,26 @@ function openTradeModal(prefill = {}) {
 function closeTradeModal() {
   const modal = document.getElementById("tradeModal");
   if (modal) modal.hidden = true;
-  document.body.classList.remove("floating-sheet-open");
+  syncOverlayBodyClasses();
+}
+
+function syncOverlayBodyClasses() {
+  const floatingOpen = Array.from(document.querySelectorAll(".floating-sheet")).some(element => !element.hidden);
+  const detailOpen = Array.from(document.querySelectorAll(".detail-sheet")).some(element => !element.hidden);
+  document.body.classList.toggle("floating-sheet-open", floatingOpen);
+  document.body.classList.toggle("detail-sheet-open", detailOpen);
+}
+
+function onGlobalEscape(event) {
+  if (event.key !== "Escape") return;
+  const trade = document.getElementById("tradeModal");
+  const notifications = document.getElementById("notificationSheet");
+  const backfill = document.getElementById("backfillSheet");
+  const detail = document.getElementById("dashboardDetailSheet");
+  if (trade && !trade.hidden) closeTradeModal();
+  if (notifications && !notifications.hidden) closeNotificationSheet();
+  if (backfill && !backfill.hidden) closeBackfillSheet();
+  if (detail && !detail.hidden) closeDashboardDetail();
 }
 
 let tradeLookupRequest = 0;
@@ -805,7 +946,13 @@ async function loadDashboard(options = {}) {
     if (data.cacheMiss || data.rebuilding) {
       const displayData = data.cacheMiss && cached ? cached : data;
       if (displayData) renderDashboard(displayData);
-      scheduleDashboardRetry(data.retryAfterSeconds);
+      // 後端已經放棄重試就別再空轉，把真正的錯誤顯示出來讓使用者能處理。
+      if (data.rebuildGaveUp) {
+        clearDashboardRetry();
+        showPageError("watchlistBody", new Error(data.rebuildError || "首頁快取重建失敗"));
+      } else {
+        scheduleDashboardRetry(data.retryAfterSeconds);
+      }
       setApiStatus(data.message || "首頁快取正在背景更新");
       return;
     }
@@ -816,6 +963,11 @@ async function loadDashboard(options = {}) {
     renderDashboard(data);
     setApiStatus("API 已連線");
   } catch (err) {
+    if (isAuthError(err)) {
+      showAuthRequired("watchlistBody", err);
+      setApiStatus("需要存取金鑰：" + err.message);
+      return;
+    }
     if (!cached) {
       renderDashboard(Mock.dashboard);
     }
@@ -834,6 +986,7 @@ function renderDashboard(data) {
   renderMarketCards(data);
   renderDashboardV11Summary(data);
   renderWatchlist(data.watchlist || []);
+  if (data.notificationsSummary) updateNotificationBadge(data.notificationsSummary.unreadCount);
 }
 
 async function loadCandidates() {
@@ -853,6 +1006,10 @@ async function loadCandidates() {
     renderCandidates(data);
     setApiStatus("候選清單已更新");
   } catch (err) {
+    if (isAuthError(err)) {
+      setApiStatus("需要存取金鑰：" + err.message);
+      return;
+    }
     if (!cached) {
       currentCandidateData = Mock.candidates;
       renderCandidates(Mock.candidates);
@@ -1384,11 +1541,18 @@ async function loadPortfolio(options = {}) {
     }
     setApiStatus("API 已連線");
   } catch (err) {
+    if (isAuthError(err)) {
+      showAuthRequired("portfolioBody", err);
+      setPortfolioStatus("需要存取金鑰才能載入庫存", "warning");
+      setApiStatus("需要存取金鑰：" + err.message);
+      return;
+    }
+    // 沒有本地快取時若不繪製，畫面會永遠停在骨架。
+    // 對照 loadDashboard 的 catch 分支同樣會兜底繪製。
     data = data || Mock.portfolio;
+    renderPortfolioData(data);
     setApiStatus(err.message);
   }
-
-  renderPortfolioData(data);
 }
 
 function renderPortfolioData(data) {
@@ -1402,20 +1566,31 @@ function renderPortfolioData(data) {
   const dailyRate = Number(summary.dailyPnlPercent ?? (previousMarketValue ? dailyPnl / previousMarketValue * 100 : 0));
   const unrealizedPnl = Number(summary.unrealizedPnl ?? items.reduce((sum, x) => sum + Number(x.unrealizedPnl || 0), 0));
   const unrealizedRate = Number(summary.unrealizedRate ?? (totalCost ? unrealizedPnl / totalCost * 100 : 0));
-  setPortfolioStatus(data.stale ? "庫存計算中..." : `資料日期：${data.dataDate || latestPortfolioDate(items) || "-"} · ${data.message || "最新股價已更新"}`, data.stale ? "warning" : "success");
+  const realizedPnl = Number(summary.realizedPnl ?? items.reduce((sum, x) => sum + Number(x.realizedPnl || 0), 0));
+  const totalReturn = Number(summary.totalReturn ?? items.reduce((sum, x) => sum + Number(x.totalReturn || 0), 0));
+  const dataProblems = Array.isArray(data.dataProblems) ? data.dataProblems : [];
+  if (dataProblems.length) {
+    // 交易重放時被跳過或夾住的列。庫存照樣算得出來，但使用者必須知道哪一筆要修。
+    setPortfolioStatus(`有 ${dataProblems.length} 筆交易需要修正：${dataProblems.join("；")}`, "warning");
+  } else {
+    setPortfolioStatus(data.stale ? "庫存計算中..." : `資料日期：${data.dataDate || latestPortfolioDate(items) || "-"} · ${data.message || "最新股價已更新"}`, data.stale ? "warning" : "success");
+  }
 
   document.getElementById("portfolioSummary").innerHTML = `
     ${summaryCard("庫存總市值", money(marketValue), "")}
     ${summaryCard("今日損益", `${dailyPnl > 0 ? "+" : ""}${money(dailyPnl)}`, dailyPnl >= 0 ? "up" : "down")}
     ${summaryCard("今日漲跌幅", `${dailyRate > 0 ? "+" : ""}${number(dailyRate)}%`, dailyRate >= 0 ? "up" : "down")}
     ${summaryCard("未實現損益", `${unrealizedPnl > 0 ? "+" : ""}${money(unrealizedPnl)}`, unrealizedPnl >= 0 ? "up" : "down")}
-    ${summaryCard("累積報酬率", `${unrealizedRate > 0 ? "+" : ""}${number(unrealizedRate)}%`, unrealizedRate >= 0 ? "up" : "down")}
+    ${summaryCard("未實現報酬率", `${unrealizedRate > 0 ? "+" : ""}${number(unrealizedRate)}%`, unrealizedRate >= 0 ? "up" : "down")}
+    ${summaryCard("已實現損益", `${realizedPnl > 0 ? "+" : ""}${money(realizedPnl)}`, realizedPnl >= 0 ? "up" : "down")}
+    ${summaryCard("總報酬", `${totalReturn > 0 ? "+" : ""}${money(totalReturn)}`, totalReturn >= 0 ? "up" : "down")}
     ${summaryCard("持有檔數", number(summary.holdingCount ?? items.length), "")}
   `;
 
   document.getElementById("portfolioBody").innerHTML = items.map(item => {
     cacheExplainContext(item);
-    const pnlCls = Number(item.unrealizedPnl) >= 0 ? "up" : "down";
+    // 缺價時不要上漲跌色，否則「無資料」會被塗成上漲。
+    const pnlCls = isBlankValue(item.unrealizedPnl) ? "" : (Number(item.unrealizedPnl) >= 0 ? "up" : "down");
     const dailyCls = Number(item.dailyChange || item.dailyPnl || 0) >= 0 ? "up" : "down";
     const currentPrice = item.currentPrice ?? item.lastPrice;
     const hasPrevious = Number(item.previousClose || 0) > 0;
@@ -1424,12 +1599,12 @@ function renderPortfolioData(data) {
         <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
         <td data-label="股數">${number(item.quantity)}</td>
         <td data-label="平均成本">${number(item.avgCost)}</td>
-        <td data-label="現價">${number(currentPrice)}</td>
+        <td data-label="現價">${dashIfBlank(number(currentPrice))}</td>
         <td data-label="今日漲跌" class="${dailyCls}">${hasPrevious ? `${Number(item.dailyChange) > 0 ? "+" : ""}${number(item.dailyChange)} (${Number(item.dailyChangePercent) > 0 ? "+" : ""}${number(item.dailyChangePercent)}%)` : "前日資料不足"}</td>
         <td data-label="今日損益" class="${dailyCls}">${hasPrevious ? `${Number(item.dailyPnl) > 0 ? "+" : ""}${money(item.dailyPnl)}` : "-"}</td>
-        <td data-label="市值">${money(item.marketValue)}</td>
-        <td data-label="未實現損益" class="${pnlCls}">${money(item.unrealizedPnl)}</td>
-        <td data-label="累積報酬率" class="${pnlCls}">${number(item.unrealizedRate)}%</td>
+        <td data-label="市值">${dashIfBlank(money(item.marketValue))}</td>
+        <td data-label="未實現損益" class="${pnlCls}">${dashIfBlank(money(item.unrealizedPnl))}</td>
+        <td data-label="累積報酬率" class="${pnlCls}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
         <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
         <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-trade-modal" data-trade-action="BUY" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">買</button><button type="button" data-action="open-trade-modal" data-trade-action="SELL" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">賣</button><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol)}">線圖</button></div></td>
       </tr>
@@ -1462,7 +1637,8 @@ async function loadAnalysis(symbol, forceRefresh = false) {
     return;
   }
 
-  let request = analysisRequests.get(symbol);
+  const analysisRequestKey = symbol + (forceRefresh ? ":force" : ":cached");
+  let request = analysisRequests.get(analysisRequestKey);
   if (!request) {
     document.getElementById("mainChart").innerHTML = `<text x="40" y="80" fill="#94a3b8">線圖載入中...</text>`;
     request = Api.getAnalysis(symbol, forceRefresh)
@@ -1472,9 +1648,9 @@ async function loadAnalysis(symbol, forceRefresh = false) {
         return data;
       })
       .finally(() => {
-        analysisRequests.delete(symbol);
+        analysisRequests.delete(analysisRequestKey);
       });
-    analysisRequests.set(symbol, request);
+    analysisRequests.set(analysisRequestKey, request);
   }
 
   try {
@@ -1625,15 +1801,30 @@ async function loadTransactions(options = {}) {
   updateLoadMoreButton("btnLoadMoreTransactions", false, true);
   try {
     const data = await Api.getTransactions({ limit: state.limit, offset: state.offset });
-    const previousItems = append && pageDataCache.transactions ? pageDataCache.transactions.items || [] : [];
-    const merged = Object.assign({}, data, { items: previousItems.concat(data.items || []) });
+    const existingItems = pageDataCache.transactions ? pageDataCache.transactions.items || [] : (cached ? cached.items || [] : []);
+    const localPending = existingItems.filter(item => item && (item.pending === true || item.error === true));
+    const previousServerItems = append ? existingItems.filter(item => item && item.pending !== true && item.error !== true) : [];
+    const serverItems = previousServerItems.concat(data.items || []);
+    const seen = new Set();
+    const mergedItems = localPending.concat(serverItems).filter(item => {
+      const key = String(item.id || `${item.date}|${item.symbol}|${item.action}|${item.quantity}|${item.price}`);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const merged = Object.assign({}, data, { items: mergedItems });
     pageDataCache.transactions = merged;
     state.hasMore = Boolean(data.hasMore);
-    state.offset = merged.items.length;
+    state.offset = Number(data.offset || state.offset) + (data.items || []).length;
     saveTransactionsCache(merged);
     renderTransactions(merged.items);
     setApiStatus("交易紀錄已更新");
   } catch (err) {
+    if (isAuthError(err)) {
+      showAuthRequired("transactionsBody", err);
+      setApiStatus("需要存取金鑰：" + err.message);
+      return;
+    }
     if (!cached) renderTransactions(Mock.transactions.items || []);
     setApiStatus("交易紀錄載入失敗：" + err.message);
   } finally {
@@ -1684,6 +1875,10 @@ async function onSubmitTransaction(event) {
   const price = Number(payload.price || 0);
   if (!payload.symbol || !payload.date || quantity <= 0 || price <= 0) {
     message.textContent = "請完整填寫股票代號、股數、價格與日期";
+    return;
+  }
+  if (payload.date > formatLocalDate(new Date())) {
+    message.textContent = "交易日期不可晚於今天";
     return;
   }
   if (payload.tradeAction === "SELL") {
@@ -1830,6 +2025,13 @@ async function onDeleteTransaction(btn) {
   }
 }
 
+function chartPriceValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function drawMainChart(rows, cost, technicalLines = getSelectedAnalysisLines()) {
   const svg = document.getElementById("mainChart");
   const tooltip = document.getElementById("chartTooltip");
@@ -1837,17 +2039,20 @@ function drawMainChart(rows, cost, technicalLines = getSelectedAnalysisLines()) 
   const height = 420;
   const pad = 44;
 
-  const validRows = rows.filter(r => isFinite(Number(r.close)));
+  const validRows = rows.filter(r => chartPriceValue(r.close) !== null);
   if (tooltip) tooltip.hidden = true;
   if (!validRows.length) {
     svg.innerHTML = `<text x="40" y="80" fill="#94a3b8">沒有價格資料</text>`;
     return;
   }
 
-  const closes = validRows.map(r => Number(r.close));
-  const selectedLineValues = technicalLines.flatMap(option => validRows.map(r => Number(r[option.key])).filter(v => isFinite(v)));
+  const closes = validRows.map(r => chartPriceValue(r.close));
+  const selectedLineValues = technicalLines.flatMap(option => validRows
+    .map(r => chartPriceValue(r[option.key]))
+    .filter(v => v !== null));
   const all = closes.concat(selectedLineValues);
-  if (cost) all.push(Number(cost));
+  const costValue = chartPriceValue(cost);
+  if (costValue !== null) all.push(costValue);
 
   const min = Math.min(...all) * 0.97;
   const max = Math.max(...all) * 1.03;
@@ -1862,10 +2067,26 @@ function drawMainChart(rows, cost, technicalLines = getSelectedAnalysisLines()) 
 
   function pointsBy(key) {
     return validRows
-      .map((r, i) => ({ value: Number(r[key]), i }))
-      .filter(p => isFinite(p.value))
+      .map((r, i) => ({ value: chartPriceValue(r[key]), i }))
+      .filter(p => p.value !== null)
       .map(p => `${x(p.i, validRows)},${y(p.value)}`)
       .join(" ");
+  }
+
+  function lineSegmentsBy(key) {
+    const segments = [];
+    let segment = [];
+    validRows.forEach((row, i) => {
+      const value = chartPriceValue(row[key]);
+      if (value === null) {
+        if (segment.length > 1) segments.push(segment.join(" "));
+        segment = [];
+        return;
+      }
+      segment.push(`${x(i, validRows)},${y(value)}`);
+    });
+    if (segment.length > 1) segments.push(segment.join(" "));
+    return segments;
   }
 
   const grid = [];
@@ -1876,16 +2097,16 @@ function drawMainChart(rows, cost, technicalLines = getSelectedAnalysisLines()) 
 
   const last = validRows[validRows.length - 1];
   const lastX = x(validRows.length - 1, validRows);
-  const lastY = y(Number(last.close));
+  const lastY = y(chartPriceValue(last.close));
   const chartPoints = validRows.map((row, i) => ({
     x: x(i, validRows),
-    y: y(Number(row.close)),
+    y: y(chartPriceValue(row.close)),
     row: row
   }));
 
   let costLine = "";
-  if (cost && isFinite(Number(cost))) {
-    const cy = y(Number(cost));
+  if (costValue !== null) {
+    const cy = y(costValue);
     costLine = `
       <line x1="${pad}" y1="${cy}" x2="${width - pad}" y2="${cy}" stroke="#eab308" stroke-width="2" stroke-dasharray="8 8" />
       <text x="${width - pad - 96}" y="${cy - 8}" fill="#eab308" font-size="13">成本 ${number(cost)}</text>
@@ -1893,10 +2114,10 @@ function drawMainChart(rows, cost, technicalLines = getSelectedAnalysisLines()) 
   }
 
   const technicalLineSvg = technicalLines.map(option => {
-    const points = pointsBy(option.key);
-    if (!points) return "";
+    const segments = lineSegmentsBy(option.key);
+    if (!segments.length) return "";
     const dash = option.dash ? ` stroke-dasharray="${escapeHtml(option.dash)}"` : "";
-    return `<polyline points="${points}" fill="none" stroke="${escapeHtml(option.color)}" stroke-width="2.5" opacity="0.92"${dash} />`;
+    return segments.map(points => `<polyline points="${points}" fill="none" stroke="${escapeHtml(option.color)}" stroke-width="2.5" opacity="0.92"${dash} />`).join("");
   }).join("");
 
   svg.innerHTML = `
@@ -1939,7 +2160,7 @@ function bindMainChartHover(svg, tooltip, points, config) {
   function showPoint(index, event) {
     const point = points[Math.max(0, Math.min(points.length - 1, index))];
     const row = point.row || {};
-    const cost = Number(config.cost);
+    const cost = chartPriceValue(config.cost);
 
     if (layer) layer.style.display = "";
     if (line) {
@@ -1956,10 +2177,10 @@ function bindMainChartHover(svg, tooltip, points, config) {
       `<span>收盤價 ${number(row.close)}</span>`
     ];
     (config.technicalLines || []).forEach(option => {
-      const value = Number(row[option.key]);
-      if (isFinite(value)) parts.push(`<span>${escapeHtml(option.label)} ${number(value)}</span>`);
+      const value = chartPriceValue(row[option.key]);
+      if (value !== null) parts.push(`<span>${escapeHtml(option.label)} ${number(value)}</span>`);
     });
-    if (isFinite(cost) && cost > 0) parts.push(`<span>平均成本 ${number(cost)}</span>`);
+    if (cost !== null) parts.push(`<span>平均成本 ${number(cost)}</span>`);
 
     tooltip.innerHTML = parts.join("");
     tooltip.hidden = false;
@@ -1995,7 +2216,7 @@ function bindMainChartHover(svg, tooltip, points, config) {
 }
 
 function sparkline(values, color = "#22c55e", width = 150, height = 36) {
-  const arr = values.map(Number).filter(v => isFinite(v));
+  const arr = values.map(chartPriceValue).filter(v => v !== null);
   if (!arr.length) return "";
   const min = Math.min(...arr);
   const max = Math.max(...arr);
@@ -2060,16 +2281,29 @@ function signalClass(direction) {
   return "";
 }
 
+// 後端「無資料」是空字串，而 Number("") 是 0。
+// 少了這個檢查，缺價的持股會顯示成現價 0、未實現損益 0，比顯示 -100% 一樣誤導。
+function isBlankValue(value) {
+  return value === null || value === undefined || String(value).trim() === "";
+}
+
 function number(value) {
+  if (isBlankValue(value)) return "";
   const n = Number(value);
   if (!isFinite(n)) return "";
   return n.toLocaleString("zh-TW", { maximumFractionDigits: 2 });
 }
 
 function money(value) {
+  if (isBlankValue(value)) return "";
   const n = Number(value);
   if (!isFinite(n)) return "";
   return n.toLocaleString("zh-TW", { maximumFractionDigits: 0 });
+}
+
+/** 空值顯示破折號，避免和真實的 0 混淆。 */
+function dashIfBlank(text) {
+  return text === "" ? "—" : text;
 }
 
 function escapeHtml(value) {
@@ -2187,16 +2421,23 @@ async function loadNotifications(options = {}) {
     else setApiStatus("通知資料可能不是最新：" + err.message);
   } finally {
     state.loading = false;
+    updateLoadMoreButton("btnLoadMoreNotifications", state.hasMore, false);
   }
 }
 
 function renderNotifications(data) {
   const items = Array.isArray(data.items) ? data.items : [];
-  document.getElementById("notificationSheetBody").innerHTML = items.map(item => `<article class="notification-card ${String(item.level || "info").toLowerCase()} ${isNotificationRead(item) ? "is-read" : "is-unread"}">
+  const allowedLevels = new Set(["info", "success", "warning", "error", "risk", "danger"]);
+  document.getElementById("notificationSheetBody").innerHTML = items.map(item => {
+    const level = String(item.level || "info").toLowerCase();
+    const safeLevel = allowedLevels.has(level) ? level : "info";
+    return `<article class="notification-card ${safeLevel} ${isNotificationRead(item) ? "is-read" : "is-unread"}">
     <div class="v11-card-head"><strong>${escapeHtml(item.title || item.type || "通知")}</strong><span>${escapeHtml(item.date || item.createdAt || "")}</span></div>
     <div class="notification-message">${escapeHtml(item.message || "")}</div>
     <div class="notification-footer"><div class="v11-meta">${item.symbol ? renderStockLink(item.symbol, item.name) : ""} · ${escapeHtml(item.source || "StockLab")}</div>${isNotificationRead(item) ? "" : `<button type="button" data-action="mark-notification-read" data-id="${escapeHtml(String(item.id || ""))}">標為已讀</button>`}</div>
-  </article>`).join("") || renderV11Empty("目前沒有通知");
+  </article>`;
+  }).join("") || renderV11Empty("目前沒有通知");
+  updateLoadMoreButton("btnLoadMoreNotifications", paginationState.notifications.hasMore, false);
 }
 
 async function clearV11Notifications() {
@@ -2222,7 +2463,7 @@ function openNotificationSheet() {
 function closeNotificationSheet() {
   const sheet = document.getElementById("notificationSheet");
   if (sheet) sheet.hidden = true;
-  document.body.classList.remove("floating-sheet-open");
+  syncOverlayBodyClasses();
 }
 
 async function markAllNotificationsRead() {
@@ -2349,6 +2590,32 @@ function showLoading(target, message = "資料載入中") {
   const container = typeof target === "string" ? document.getElementById(target) : target;
   if (!container) return;
   container.innerHTML = `<div class="v11-empty loading-state">${escapeHtml(message)}</div>`;
+}
+
+function isAuthError(err) {
+  return Boolean(err && err.code === "AUTH");
+}
+
+/**
+ * 認證失敗時**絕對不要** fallback 到 Mock。
+ * 顯示一整頁看起來合理的模擬數字，比顯示錯誤更危險——
+ * 使用者會以為那是自己的真實庫存。
+ */
+function showAuthRequired(target, err) {
+  const container = typeof target === "string" ? document.getElementById(target) : target;
+  if (!container) return;
+  const body = `<div class="v11-empty error-state">`
+    + `<strong>需要存取金鑰</strong>`
+    + `<p>${escapeHtml((err && err.message) || "存取金鑰錯誤或已失效")}</p>`
+    + `<p><button type="button" data-action="prompt-access-key">重新輸入存取金鑰</button></p>`
+    + `</div>`;
+  if (container.tagName === "TBODY") {
+    const table = container.closest("table");
+    const columns = table ? Math.max(1, table.querySelectorAll("thead th").length) : 1;
+    container.innerHTML = `<tr><td colspan="${columns}">${body}</td></tr>`;
+    return;
+  }
+  container.innerHTML = body;
 }
 
 function showPageError(target, err) {
@@ -2485,7 +2752,7 @@ function openDashboardDetailSheet(title, body) {
 function closeDashboardDetail() {
   const sheet = document.getElementById("dashboardDetailSheet");
   if (sheet) sheet.hidden = true;
-  document.body.classList.remove("detail-sheet-open");
+  syncOverlayBodyClasses();
 }
 
 function openBackfillSheet() {
@@ -2497,14 +2764,15 @@ function openBackfillSheet() {
 function closeBackfillSheet() {
   const sheet = document.getElementById("backfillSheet");
   if (sheet) sheet.hidden = true;
-  document.body.classList.remove("detail-sheet-open");
+  syncOverlayBodyClasses();
 }
 
 function showToast(message, type = "info") {
   const region = document.getElementById("toastRegion");
   if (!region || !message) return;
   const toast = document.createElement("div");
-  toast.className = `toast ${type}`;
+  const safeType = ["info", "success", "warning", "error"].includes(type) ? type : "info";
+  toast.className = `toast ${safeType}`;
   toast.textContent = message;
   region.appendChild(toast);
   setTimeout(() => toast.remove(), 4200);

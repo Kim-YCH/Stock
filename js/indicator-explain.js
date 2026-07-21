@@ -398,12 +398,10 @@ function getExplainContext(symbol, targetElement) {
     const candidateData = pageDataCache.candidates || {};
     const candidateRow = findExplainRow(candidateData.buyCandidates, symbol) || findExplainRow(candidateData.sellCandidates, symbol);
     const analysisRow = pageDataCache.analysis && pageDataCache.analysis[symbol];
-    const detailRow = pageDataCache.stockDetail && pageDataCache.stockDetail[symbol];
-    [dashboardRow, candidateRow, analysisRow, detailRow].filter(Boolean).forEach(row => {
+    [dashboardRow, candidateRow, analysisRow].filter(Boolean).forEach(row => {
       context = Object.assign(context, cacheExplainContext(row));
     });
   }
-  if (targetElement && targetElement.dataset.explainValue !== undefined) context.explainValue = targetElement.dataset.explainValue;
   if (targetElement && targetElement.dataset.explainNote) context.currentReasonOverride = targetElement.dataset.explainNote;
   context.symbol = symbol || context.symbol || "";
   return context;
@@ -461,7 +459,8 @@ function renderIndicatorExplanationModal(result, payload) {
 
 function closeIndicatorExplanationModal() {
   const modal = document.getElementById("indicatorExplainModal");
-  if (modal) modal.hidden = true;
+  if (!modal || modal.hidden) return;
+  modal.hidden = true;
   document.body.classList.remove("modal-open", "explain-modal-open");
   document.documentElement.classList.remove("modal-open");
   if (lastExplainTrigger && document.contains(lastExplainTrigger)) lastExplainTrigger.focus({ preventScroll: true });
