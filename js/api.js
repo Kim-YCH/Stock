@@ -114,10 +114,12 @@ const Api = (() => {
 
       const script = document.createElement("script");
       let callbackCalled = false;
+      // 後端 Apps Script 單次執行硬上限是 6 分鐘。前端逾時設在 350 秒（約 5.8 分），
+      // 給重算類請求接近完整的後端預算，又不會在後端已死之後還空等。
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error("API 逾時"));
-      }, 180000);
+      }, 350000);
 
       function cleanup() {
         clearTimeout(timeout);
@@ -184,6 +186,7 @@ const Api = (() => {
     removeWatchlist: (symbol, name = "") => jsonp("removeWatchlist", { symbol, name }),
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     runDerivedNow: () => jsonp("runDerivedNow"),
+    scheduleDerivedRebuild: () => jsonp("scheduleDerivedRebuild"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
     addTransaction: (data) => jsonp("addTransaction", data),
     deleteTransaction: (id) => jsonp("deleteTransaction", { id })

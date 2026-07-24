@@ -229,9 +229,39 @@ function detectDeviceMode() {
 }
 
 
+function sleep_(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function fetchDashboardState_() {
+  try {
+    return (await Api.getDashboard(false)) || {};
+  } catch (err) {
+    return {};
+  }
+}
+
 /**
- * 不依賴背景排程，直接把技術指標與所有衍生快取重算一次。
- * 環境不跑 time-driven trigger 時，這是唯一能把指標算出來的路徑。
+ * 輪詢 dashboard 的 updatedAt，等背景 Phase 2 重建快取後才算完成。
+ * 只認「非 cacheMiss / 非 stale 且 updatedAt 前進」的狀態——cacheMiss 每次會回傳新的
+ * now，直接比 updatedAt 會誤判成已完成。
+ */
+async function waitForDerivedRebuild_(baselineUpdatedAt, maxMs) {
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    await sleep_(30000);
+    const d = await fetchDashboardState_();
+    const updatedAt = String((d && d.updatedAt) || "");
+    if (d && !d.cacheMiss && !d.stale && updatedAt && updatedAt !== baselineUpdatedAt) return true;
+  }
+  return false;
+}
+
+/**
+ * 把技術指標與所有衍生快取排入背景重算，再輪詢直到完成。
+ *
+ * 舊版走 runDerivedNow 會把整條管線塞進單一次請求，標的多時撞後端 6 分鐘上限；
+ * 改成排程 runDailyDerivedCaches（Phase 1→2→3，各有完整 6 分鐘），前端不再阻塞等待。
  */
 async function onRunDerivedNow() {
   const btn = document.getElementById("btnRunDerived");
@@ -242,23 +272,34 @@ async function onRunDerivedNow() {
 
   btn.disabled = true;
   const oldText = btn.textContent;
-  btn.textContent = "重算中...";
-  setApiStatus("正在重算技術指標與衍生快取，標的多時需要數十秒");
+  btn.textContent = "排程中...";
+  setApiStatus("正在把技術指標與衍生快取排入背景重算");
 
   try {
-    const result = await Api.runDerivedNow();
-    invalidateFrontendQuoteCaches();
-    pageDataCache.dashboard = null;
-    clearCache(CACHE_KEYS.dashboard);
-    await loadDashboard({ force: true });
-    const failed = [];
-    const phases = result.phases || {};
-    Object.keys(phases).forEach(name => { if (phases[name] && phases[name].ok === false) failed.push(name); });
-    const text = failed.length
-      ? `重算完成，但有階段失敗：${failed.join("、")}`
-      : "技術指標與衍生快取已重算完成";
-    setApiStatus(text);
-    showToast(text, failed.length ? "warning" : "success");
+    const before = await fetchDashboardState_();
+    const baseline = (before && !before.cacheMiss) ? String(before.updatedAt || "") : "";
+
+    const result = await Api.scheduleDerivedRebuild();
+    if (!result || result.ok === false) {
+      throw new Error((result && result.message) || "無法排程背景重算");
+    }
+
+    btn.textContent = "背景重算中...";
+    setApiStatus("已排入背景重算，完成後會自動更新（通常 1–5 分鐘，可先離開此頁）");
+    showToast("已排入背景重算，完成後自動更新", "info");
+
+    const done = await waitForDerivedRebuild_(baseline, 10 * 60 * 1000);
+    if (done) {
+      invalidateFrontendQuoteCaches();
+      pageDataCache.dashboard = null;
+      clearCache(CACHE_KEYS.dashboard);
+      await loadDashboard({ force: false });
+      setApiStatus("技術指標與衍生快取已重算完成");
+      showToast("重算完成", "success");
+    } else {
+      setApiStatus("背景重算仍在進行，請稍後重新整理頁面查看");
+      showToast("重算尚未完成，稍後會自動就緒，可手動重整", "warning");
+    }
   } catch (err) {
     setApiStatus("重算失敗：" + err.message);
     showToast("重算失敗：" + err.message, "error");
@@ -1020,10 +1061,12 @@ async function loadCandidates() {
 
 function renderCandidates(data) {
   const sortMode = document.getElementById("candidateSort").value;
+  const filterSelect = document.getElementById("candidateFilter");
+  const filterMode = filterSelect ? filterSelect.value : "all";
   const rawBuyItems = (data.buyCandidates || []).map(item => Object.assign({ candidateType: "BUY" }, item));
   const rawSellItems = (data.sellCandidates || []).map(item => Object.assign({ candidateType: "SELL" }, item));
-  const buyItems = sortCandidateItems(rawBuyItems.filter(candidateMatchesFilter), sortMode);
-  const sellItems = sortCandidateItems(rawSellItems.filter(candidateMatchesFilter), sortMode);
+  const buyItems = sortCandidateItems(rawBuyItems.filter(item => candidateMatchesFilter(item, filterMode)), sortMode);
+  const sellItems = sortCandidateItems(rawSellItems.filter(item => candidateMatchesFilter(item, filterMode)), sortMode);
   const status = document.getElementById("candidateStatus");
   status.textContent = `盤後資料 ${data.dataDate || "尚未建立"} · 買入 ${rawBuyItems.length} 檔 · 賣出 ${rawSellItems.length} 檔 · 供下一交易日參考`;
   buyItems.concat(sellItems).forEach(cacheExplainContext);
@@ -1090,9 +1133,11 @@ function renderCandidateReasons(item) {
   </details>`;
 }
 
-function candidateMatchesFilter(item) {
-  const select = document.getElementById("candidateFilter");
-  const mode = select ? select.value : "all";
+function candidateMatchesFilter(item, mode) {
+  if (mode === undefined) {
+    const select = document.getElementById("candidateFilter");
+    mode = select ? select.value : "all";
+  }
   if (mode === "all") return true;
   const symbol = normalizeSymbolInput(item.symbol);
   const isEtf = String(item.type || "").toUpperCase() === "ETF" || /^00\d{3,4}$/.test(symbol);
@@ -1281,13 +1326,45 @@ function marketModeClass(mode) {
   return "warn";
 }
 
+function getVisibleWatchlistItems_() {
+  return currentWatchlistItems
+    .filter(item => item.enabled === undefined || item.enabled === true || String(item.enabled).toUpperCase() === "TRUE" || item.enabled === "")
+    .sort(compareWatchlistItems);
+}
+
+// 純排序時只重排既有 <tr> 節點，避免重建整段 innerHTML 與重繪每列 sparkline SVG。
+// 任何一列對不上（數量不符或找不到對應 symbol）就退回完整 render，正確性優先。
+function reorderWatchlistRows() {
+  const tbody = document.getElementById("watchlistBody");
+  if (!tbody) return;
+  updateWatchlistSortHeaders();
+  const visibleItems = getVisibleWatchlistItems_();
+  const existing = new Map();
+  Array.prototype.forEach.call(tbody.children, row => {
+    const sym = row.getAttribute("data-symbol");
+    if (sym !== null) existing.set(sym, row);
+  });
+  if (existing.size !== visibleItems.length) {
+    renderWatchlist(currentWatchlistItems);
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  for (const item of visibleItems) {
+    const row = existing.get(String(item.symbol || ""));
+    if (!row) {
+      renderWatchlist(currentWatchlistItems);
+      return;
+    }
+    fragment.appendChild(row);
+  }
+  tbody.appendChild(fragment);
+}
+
 function renderWatchlist(items) {
   const tbody = document.getElementById("watchlistBody");
   const empty = document.getElementById("emptyWatchlist");
   currentWatchlistItems = Array.isArray(items) ? items.slice() : currentWatchlistItems;
-  const visibleItems = currentWatchlistItems
-    .filter(item => item.enabled === undefined || item.enabled === true || String(item.enabled).toUpperCase() === "TRUE" || item.enabled === "")
-    .sort(compareWatchlistItems);
+  const visibleItems = getVisibleWatchlistItems_();
 
   updateWatchlistSortHeaders();
 
@@ -1319,7 +1396,7 @@ function renderWatchlist(items) {
     const sparkStats = calcSparklineStats_(item.sparkline || []);
     const sparkTitle = sparkStats.valid ? `近 20 日｜最高 ${number(sparkStats.high)}｜最低 ${number(sparkStats.low)}｜漲跌 ${signedNumber(sparkStats.changePercent)}%｜波動 ${number(sparkStats.rangePercent)}%` : "近 20 日資料不足";
     return `
-      <tr>
+      <tr data-symbol="${safeSymbol}">
         <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)}</small></div></td>
         <td data-label="漲跌幅"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
         <td data-label="技術分數">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
@@ -1487,7 +1564,7 @@ function setWatchlistSort(key) {
     watchlistSortState.key = key;
     watchlistSortState.direction = ["symbol", "date", "trendText", "signalSummary"].indexOf(key) >= 0 ? "asc" : "desc";
   }
-  renderWatchlist(currentWatchlistItems);
+  reorderWatchlistRows();
 }
 
 function compareWatchlistItems(a, b) {
