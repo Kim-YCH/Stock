@@ -120,10 +120,19 @@ let portfolioTransactionsLoaded = false;
 let notificationCacheLoadedAt = 0;
 const watchlistSortState = { key: "", direction: "asc" };
 
+// PWA 殼層快取：只快取同源靜態資源，不碰後端 JSONP（見 service-worker.js）。
+// 註冊失敗（例如非 https、或不支援）就靜默略過，不影響 app 運作。
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  });
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   cleanupLocalCaches();
   setAppVersionLabel();
-  loadBackendVersion();
+  // 後端版本改由 dashboard payload 的 data.version 帶回（renderDashboard 設定），
+  // 不再於啟動時多發一支獨立的 version JSONP（那是一次多餘的冷啟動）。
   detectDeviceMode();
   window.addEventListener("resize", detectDeviceMode);
 
@@ -554,18 +563,6 @@ function setBackendVersionLabel(version) {
     : "前端為 " + frontendVersion + "，目前 Web App 後端為 " + backendVersion;
 }
 
-async function loadBackendVersion() {
-  if (!Api.isConfigured() || typeof Api.getBackendVersion !== "function") return;
-  try {
-    const data = await Api.getBackendVersion();
-    if (!data || data.ok !== true || !data.version) return;
-    runtimeBackendVersion = String(data.version).trim();
-    setBackendVersionLabel(runtimeBackendVersion);
-  } catch (err) {
-    // Dashboard version remains available as a fallback for older deployments.
-  }
-}
-
 function getCachedDashboard() {
   return readCache(CACHE_KEYS.dashboard);
 }
@@ -709,9 +706,20 @@ async function onSubmitWatchlist(event) {
     message.textContent = resultMessage;
     form.reset();
     form.querySelector("input[name='backfill']").checked = false;
-    pageDataCache.dashboard = null;
-    clearCache(CACHE_KEYS.dashboard);
-    await loadDashboard({ force: true });
+    // 後端加入時已同步重建過 dashboard（result.cache.dashboard），直接拿來渲染，
+    // 不必再多發一次 force 重建（那是加關注最貴、最慢的第二次冷啟動）。缺才退回強制重載。
+    const inlineDashboard = result.cache && result.cache.dashboard;
+    if (inlineDashboard && Array.isArray(inlineDashboard.watchlist)) {
+      pageDataCache.dashboard = inlineDashboard;
+      markPageDataFetched_("dashboard");
+      saveDashboardCache(inlineDashboard);
+      renderDashboard(inlineDashboard);
+      setApiStatus("API 已連線");
+    } else {
+      pageDataCache.dashboard = null;
+      clearCache(CACHE_KEYS.dashboard);
+      await loadDashboard({ force: true });
+    }
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
     optimisticSymbols.forEach(removeCachedWatchlistItem);
@@ -971,11 +979,17 @@ function changePage(pageName, options = {}) {
 }
 
 let dashboardRetryTimer = null;
+let dashboardRetryCount = 0;
 
 async function loadDashboard(options = {}) {
   const cached = pageDataCache.dashboard || getCachedDashboard();
   if (cached) {
     renderDashboard(cached);
+    // 切頁 90 秒內回到首頁且非強制刷新：記憶體已有新鮮資料，不再打後端。
+    if (options.force !== true && pageDataCache.dashboard && isPageDataFresh_("dashboard")) {
+      setApiStatus("API 已連線");
+      return;
+    }
     setApiStatus("已載入快取，正在更新...");
   } else {
     renderSkeleton("marketCards", "summary", 6);
@@ -1000,6 +1014,7 @@ async function loadDashboard(options = {}) {
 
     clearDashboardRetry();
     pageDataCache.dashboard = data;
+    markPageDataFetched_("dashboard");
     saveDashboardCache(data);
     renderDashboard(data);
     setApiStatus("API 已連線");
@@ -1021,6 +1036,11 @@ function renderDashboard(data) {
   const lastRun = data.lastRun || {};
   const dataDate = data.dataDate || lastRun.dataDate || "";
   const updatedAt = data.updatedAt || lastRun.finishedAt || lastRun.updatedAt || "";
+  // 從 dashboard payload 記住後端版本，供版本標籤與「前後端一致」比對使用
+  // （取代先前啟動時獨立的 version JSONP）。
+  if (!runtimeBackendVersion && (data.version || lastRun.version)) {
+    runtimeBackendVersion = String(data.version || lastRun.version).trim();
+  }
   setBackendVersionLabel(runtimeBackendVersion || data.version || lastRun.version || "");
 
   renderUpdateStatus(updatedAt, dataDate, data.version, lastRun);
@@ -1035,6 +1055,10 @@ async function loadCandidates() {
   if (cached) {
     currentCandidateData = cached;
     renderCandidates(cached);
+    if (isPageDataFresh_("candidates")) {
+      setApiStatus("候選清單已更新");
+      return;
+    }
   } else {
     renderSkeleton("candidateSummary", "summary", 4);
     renderTableLoading("buyCandidatesBody", 10, "候選資料載入中");
@@ -1043,6 +1067,7 @@ async function loadCandidates() {
   try {
     const data = await Api.getCandidates();
     pageDataCache.candidates = data;
+    markPageDataFetched_("candidates");
     currentCandidateData = data;
     renderCandidates(data);
     setApiStatus("候選清單已更新");
@@ -1149,8 +1174,12 @@ function candidateMatchesFilter(item, mode) {
 }
 
 function scheduleDashboardRetry(retryAfterSeconds) {
-  clearDashboardRetry();
-  const seconds = Math.max(10, Number(retryAfterSeconds || 70));
+  if (dashboardRetryTimer) clearTimeout(dashboardRetryTimer);
+  dashboardRetryCount += 1;
+  // 背景重建通常 ~20 秒內完成：前 2 次很快回頭抓（6 秒），之後才退避到後端建議間隔，
+  // 避免舊版固定 30 秒起跳讓首屏一直空著。
+  const backendHint = Number(retryAfterSeconds || 30);
+  const seconds = dashboardRetryCount <= 2 ? 6 : Math.max(10, backendHint);
   dashboardRetryTimer = setTimeout(() => {
     dashboardRetryTimer = null;
     loadDashboard();
@@ -1158,6 +1187,7 @@ function scheduleDashboardRetry(retryAfterSeconds) {
 }
 
 function clearDashboardRetry() {
+  dashboardRetryCount = 0;
   if (!dashboardRetryTimer) return;
   clearTimeout(dashboardRetryTimer);
   dashboardRetryTimer = null;
@@ -1599,24 +1629,39 @@ function updateWatchlistSortHeaders() {
 
 async function loadPortfolio(options = {}) {
   let data = pageDataCache.portfolio;
-  if (data) renderPortfolioData(data);
-  else {
+  if (data) {
+    renderPortfolioData(data);
+    // 切頁 90 秒內回到庫存頁且非強制重算：記憶體已有新鮮資料就不重打後端。
+    if (options.force !== true && isPageDataFresh_("portfolio") && !data.stale) {
+      setApiStatus("API 已連線");
+      return;
+    }
+  } else {
     renderSkeleton("portfolioSummary", "summary", 6);
     renderTableLoading("portfolioBody", 11, "庫存資料載入中");
   }
   try {
     data = await Api.getPortfolio(options.force === true);
     pageDataCache.portfolio = data;
+    markPageDataFetched_("portfolio");
     renderPortfolioData(data);
-    if (data.stale && Api.refreshPortfolio && options.skipRefresh !== true) {
-      setPortfolioStatus("庫存計算中...", "warning");
-      const refreshed = await Api.refreshPortfolio();
-      pageDataCache.portfolio = refreshed;
-      data = refreshed;
-      renderPortfolioData(data);
-      showToast("庫存更新完成", "success");
-    }
     setApiStatus("API 已連線");
+    // stale：先呈現既有數字，重算改在背景進行、完成再更新——不再用第二次冷啟動
+    // 阻塞這次渲染（原本 stale 首見要等兩次序列往返才出最終數字）。
+    if (data.stale && Api.refreshPortfolio && options.skipRefresh !== true) {
+      setPortfolioStatus("庫存背景重算中...", "warning");
+      Api.refreshPortfolio()
+        .then(refreshed => {
+          pageDataCache.portfolio = refreshed;
+          markPageDataFetched_("portfolio");
+          renderPortfolioData(refreshed);
+          showToast("庫存更新完成", "success");
+        })
+        .catch(refreshErr => {
+          // 背景重算失敗就保留先前已顯示的數字，只在狀態列提示。
+          setPortfolioStatus("庫存背景重算失敗，顯示的是前次結果：" + refreshErr.message, "warning");
+        });
+    }
   } catch (err) {
     if (isAuthError(err)) {
       showAuthRequired("portfolioBody", err);
@@ -2403,6 +2448,20 @@ const pageDataCache = {
   analysis: {}
 };
 
+// 記錄各頁最近一次「真正從後端抓到資料」的時間戳。切頁短時間內（TTL）重回同一頁，
+// 若記憶體已有新鮮資料就直接 render 不再打後端——每支 API 呼叫都是一次獨立冷啟動，
+// 這是消除切頁重複往返最有效的短路。注意：只認 pageDataCache 的「本 session 記憶體」
+// 新鮮度，7 天的 localStorage 快取仍只用來畫首屏、永遠不跳過網路。
+const pageDataFetchedAt = {};
+const PAGE_DATA_TTL_MS = 90 * 1000;
+function isPageDataFresh_(key) {
+  const at = pageDataFetchedAt[key];
+  return Boolean(at) && (Date.now() - at) < PAGE_DATA_TTL_MS;
+}
+function markPageDataFetched_(key) {
+  pageDataFetchedAt[key] = Date.now();
+}
+
 const paginationState = {
   transactions: { limit: 20, offset: 0, hasMore: false, loading: false },
   notifications: { limit: 30, offset: 0, hasMore: false, loading: false }
@@ -2410,12 +2469,19 @@ const paginationState = {
 
 async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder) {
   const cached = pageDataCache[cacheKey];
+  // 切頁 90 秒內回到同一頁：記憶體已有新鮮資料就直接呈現、不重打後端。
+  if (cached && isPageDataFresh_(cacheKey)) {
+    renderFn(cached, { stale: false });
+    setApiStatus("v11 資料已更新");
+    return;
+  }
   if (cached) renderFn(cached, { stale: true });
   else renderV11Loading(cacheKey);
 
   try {
     const data = await fetcher();
     pageDataCache[cacheKey] = data;
+    markPageDataFetched_(cacheKey);
     if (!cached || !sameCachedVersion(cached, data)) renderFn(data, { stale: false });
     setApiStatus("v11 資料已更新");
   } catch (err) {

@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StockLab</title>
   <meta name="theme-color" content="#050816" />
+  <!-- 預熱後端連線：首個 JSONP 打 script.google.com（302 轉 googleusercontent），
+       讓 DNS/TLS 握手與 HTML/JS 解析並行，省下首次請求的連線建立時間。 -->
+  <link rel="preconnect" href="https://script.google.com" crossorigin />
+  <link rel="dns-prefetch" href="https://script.googleusercontent.com" />
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/style.css?v=11.13" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/style.css?v=11.14" />
 </head>
 <body>
   <div class="app">
@@ -371,9 +376,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script src="js/config.js?v=11.13"></script>
-  <script src="js/api.js?v=11.13"></script>
-  <script src="js/indicator-explain.js?v=11.13"></script>
-  <script src="js/app.js?v=11.13"></script>
+  <script defer src="js/config.js?v=11.14"></script>
+  <script defer src="js/api.js?v=11.14"></script>
+  <script defer src="js/indicator-explain.js?v=11.14"></script>
+  <script defer src="js/app.js?v=11.14"></script>
 </body>
 </html>
