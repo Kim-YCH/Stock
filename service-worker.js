@@ -10,16 +10,16 @@
 //
 // 發版檢查清單：改版時把 CACHE_VERSION 一起 bump（與 APP_VERSION 對齊），
 // 讓 activate 清掉舊快取、避免卡舊殼層。
-const CACHE_VERSION = "v11.14";
+const CACHE_VERSION = "v11.15";
 const CACHE_NAME = "stocklab-shell-" + CACHE_VERSION;
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=11.14",
-  "./js/config.js?v=11.14",
-  "./js/api.js?v=11.14",
-  "./js/indicator-explain.js?v=11.14",
-  "./js/app.js?v=11.14",
+  "./css/style.css?v=11.15",
+  "./js/config.js?v=11.15",
+  "./js/api.js?v=11.15",
+  "./js/indicator-explain.js?v=11.15",
+  "./js/app.js?v=11.15",
   "./icons/favicon.svg",
   "./manifest.json"
 ];
@@ -50,6 +50,10 @@ self.addEventListener("fetch", event => {
 
   // 跨來源（後端 JSONP script.google.com / googleusercontent）一律不攔，交給瀏覽器原生處理。
   if (url.origin !== self.location.origin) return;
+
+  // 本機開發（localhost / 127.0.0.1）不走 SW 快取，一律直連網路——
+  // 開發時 ?v= 版本戳不會每次改，否則改了檔會一直被舊快取蓋住。正式站不受影響。
+  if (url.hostname === "localhost" || url.hostname === "127.0.0.1") return;
 
   const isNavigation = request.mode === "navigate" ||
     url.pathname.endsWith("/") ||

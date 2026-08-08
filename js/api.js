@@ -1,7 +1,7 @@
 const Api = (() => {
   const inflightRequests = new Map();
-  const ACCESS_KEY_STORAGE = "stocklab_session_access_key";
-  const PUBLIC_ACTIONS = new Set(["version", "lookupStock"]);
+  const SESSION_STORAGE = "stocklab_session";
+  const PUBLIC_ACTIONS = new Set(["version", "login", "logout"]);
 
   function isConfigured() {
     return typeof API_BASE_URL !== "undefined" && Boolean(API_BASE_URL && API_BASE_URL.trim());
@@ -17,48 +17,47 @@ const Api = (() => {
     return err;
   }
 
-  // 使用者按過取消之後就不再自動追問，避免每個請求都彈一次視窗。
-  // 要重新輸入請走畫面上的「重新輸入存取金鑰」按鈕。
-  let accessKeyDeclined = false;
-  let accessKeyRequest = null;
+  // 由 app.js 注入：() => Promise<idToken|null>，用於 AUTH 失敗時的靜默重新登入。
+  let silentReauth = null;
+  function setSilentReauth(fn) { silentReauth = fn; }
 
-  /**
-   * 存取金鑰是選用的：後端沒設 STOCKLAB_API_TOKEN 就完全不需要，
-   * 這裡也不會主動詢問。只有後端回 code:"AUTH" 時才會跳出輸入框並自動重試一次。
-   */
-  function getStoredAccessKey() {
-    try { return sessionStorage.getItem(ACCESS_KEY_STORAGE) || ""; } catch (err) { return ""; }
+  function getStoredSession() {
+    try { return localStorage.getItem(SESSION_STORAGE) || ""; } catch (e) { return ""; }
+  }
+  function setStoredSession(s) {
+    try { localStorage.setItem(SESSION_STORAGE, s || ""); } catch (e) {}
+  }
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_STORAGE); } catch (e) {}
+  }
+  function hasSession() { return Boolean(getStoredSession()); }
+
+  // 使用者身分（email/role/isAdmin）也持久化，讓「重新整理後用既有 session 進來」
+  // 時仍知道自己是不是 admin（否則 admin 分頁重整後不會出現）。
+  // 角色一旦被改，後端會撤銷 session 強制重登，所以這份快取不會過期到出錯。
+  const USER_STORAGE = "stocklab_user";
+  function getStoredUser() {
+    try { return JSON.parse(localStorage.getItem(USER_STORAGE) || "null"); } catch (e) { return null; }
+  }
+  function setStoredUser(u) {
+    try { localStorage.setItem(USER_STORAGE, JSON.stringify(u || null)); } catch (e) {}
+  }
+  function clearStoredUser() {
+    try { localStorage.removeItem(USER_STORAGE); } catch (e) {}
   }
 
-  function clearAccessKey() {
-    try { sessionStorage.removeItem(ACCESS_KEY_STORAGE); } catch (err) {}
+  async function login(idToken) {
+    const data = await jsonpRaw("login", { idToken });
+    if (data && data.session) setStoredSession(data.session);
+    const user = { email: data.email, role: data.role, isAdmin: data.isAdmin === true };
+    setStoredUser(user);
+    return user;
   }
-
-  /** 主動詢問並保存。供「重新輸入存取金鑰」按鈕與自動重試共用。 */
-  function promptAccessKey() {
-    const entered = String(window.prompt("請輸入 StockLab 存取金鑰") || "").trim();
-    if (!entered) return "";
-    accessKeyDeclined = false;
-    try { sessionStorage.setItem(ACCESS_KEY_STORAGE, entered); } catch (err) {}
-    return entered;
-  }
-
-  /** 自動重試用：尊重「使用者已取消」的狀態。 */
-  function requestAccessKey() {
-    if (accessKeyDeclined) return "";
-    const entered = promptAccessKey();
-    if (!entered) accessKeyDeclined = true;
-    return entered;
-  }
-
-  function requestAccessKeyOnce() {
-    const stored = getStoredAccessKey();
-    if (stored) return Promise.resolve(stored);
-    if (accessKeyRequest) return accessKeyRequest;
-    accessKeyRequest = Promise.resolve()
-      .then(() => getStoredAccessKey() || requestAccessKey())
-      .finally(() => { accessKeyRequest = null; });
-    return accessKeyRequest;
+  async function logout() {
+    const s = getStoredSession();
+    clearSession();
+    clearStoredUser();
+    if (s) { try { await jsonpRaw("logout", { session: s }); } catch (e) {} }
   }
 
   function getOnce(action, params = {}, options = {}) {
@@ -71,20 +70,19 @@ const Api = (() => {
   }
 
   /**
-   * 帶認證重試的傳輸層。後端要求金鑰時跳出輸入框，然後**只重試一次**——
-   * 第二次仍失敗就往外丟，不會變成無限彈窗迴圈。
-   *
-   * window.prompt 是同步阻塞的，所以並行請求不會同時彈窗：
-   * 先撞到 AUTH 的那個請求問完並存好，其餘的會在 getStoredAccessKey() 直接拿到。
+   * 帶認證重試的傳輸層。session 失效時（後端回 code:"AUTH"）先嘗試用
+   * silentReauth 靜默取得新的 Google ID token 換一個新 session，然後
+   * **只重試一次**——第二次仍失敗，或沒有 silentReauth 可用，就往外丟。
    */
   async function jsonp(action, params = {}) {
     try {
       return await jsonpRaw(action, params);
     } catch (err) {
-      if (!err || err.code !== "AUTH") throw err;
-      const key = getStoredAccessKey() || await requestAccessKeyOnce();
-      if (!key) throw err;
-      return jsonpRaw(action, params);
+      if (!err || err.code !== "AUTH" || !silentReauth) throw err;
+      const idToken = await silentReauth();     // GIS 靜默取新 ID token
+      if (!idToken) throw err;
+      await login(idToken);                     // 換新 session
+      return jsonpRaw(action, params);          // 只重試一次
     }
   }
 
@@ -100,12 +98,12 @@ const Api = (() => {
       url.searchParams.set("action", action);
       url.searchParams.set("callback", callbackName);
 
-      // 記住這次請求真正送出的 key。較早送出的 AUTH 回應不得清掉使用者
-      // 在另一個請求中剛輸入的新 key，否則並行請求會要求輸入兩次。
-      let requestAccessToken = "";
+      // 記住這次請求真正送出的 session。較早送出的 AUTH 回應不得清掉
+      // 另一個請求剛換好的新 session，否則並行請求會多重新登入一次。
+      let requestSession = "";
       if (!PUBLIC_ACTIONS.has(action)) {
-        requestAccessToken = getStoredAccessKey();
-        if (requestAccessToken) url.searchParams.set("token", requestAccessToken);
+        requestSession = getStoredSession();
+        if (requestSession) url.searchParams.set("session", requestSession);
       }
 
       Object.entries(params || {}).forEach(([key, value]) => {
@@ -133,7 +131,7 @@ const Api = (() => {
         if (data && data.ok === false) {
           const message = String(data.message || "API 回傳錯誤");
           if (data.code === "AUTH") {
-            if (requestAccessToken && requestAccessToken === getStoredAccessKey()) clearAccessKey();
+            if (requestSession && requestSession === getStoredSession()) clearSession();
             reject(authError(message));
             return;
           }
@@ -166,8 +164,12 @@ const Api = (() => {
 
   return {
     isConfigured,
-    clearAccessKey,
-    promptAccessKey,
+    login,
+    logout,
+    hasSession,
+    getStoredSession,
+    getStoredUser,
+    setSilentReauth,
     getBackendVersion: () => getOnce("version"),
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getCandidates: () => getOnce("candidates"),
@@ -189,6 +191,10 @@ const Api = (() => {
     scheduleDerivedRebuild: () => jsonp("scheduleDerivedRebuild"),
     backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
     addTransaction: (data) => jsonp("addTransaction", data),
-    deleteTransaction: (id) => jsonp("deleteTransaction", { id })
+    deleteTransaction: (id) => jsonp("deleteTransaction", { id }),
+    listUsers: () => jsonp("listUsers"),
+    addUser: (email, role, displayName = "") => jsonp("addUser", { email, role, displayName }),
+    updateUser: (email, fields = {}) => jsonp("updateUser", Object.assign({ email }, fields)),
+    removeUser: (email) => jsonp("removeUser", { email })
   };
 })();

@@ -58,6 +58,11 @@ const pages = {
       const symbol = normalizeSymbolInput(document.getElementById("analysisSymbol").value);
       if (symbol) loadAnalysis(symbol);
     }
+  },
+  admin: {
+    title: "帳號管理",
+    subtitle: "白名單與角色管理（僅管理者）",
+    loader: renderAdminPanel
   }
 };
 
@@ -128,7 +133,162 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+let currentUser = null; // { email, role, isAdmin }
+
+// GIS 是 async defer 載入，冷快取/慢網路時 showLoginOverlay() 執行當下
+// window.google 可能還不存在。這個 helper 確保「不管 GIS 何時就緒
+// （已就緒／script 的 load 事件／短暫輪詢後）」都會補渲染按鈕，
+// 避免第一次造訪的使用者卡在一張沒有按鈕、也沒有錯誤訊息的死畫面。
+function whenGsiReady_(fn) {
+  const ready = () => window.google && google.accounts && google.accounts.id;
+  if (ready()) { fn(); return; }
+  // load 事件與輪詢兩條路徑都可能偵測到「就緒」，用 done 旗標讓兩者互斥，
+  // 避免哪個先觸發都各自呼叫一次 fn()（renderGsiButton_ 因此被呼叫兩次、
+  // #gsi-button 出現重複按鈕、prompt() 也被呼叫兩次）。
+  let done = false;
+  let t = null;
+  const fire = () => { if (done) return; done = true; if (t) clearInterval(t); fn(); };
+  const s = document.getElementById("gsi-client");
+  if (s) s.addEventListener("load", () => { if (ready()) fire(); }, { once: true });
+  // 防呆：即使 load 事件錯過，也在短暫輪詢後嘗試一次
+  let tries = 0;
+  t = setInterval(() => {
+    if (ready()) fire();
+    else if (++tries > 50) clearInterval(t); // ~5s 上限
+  }, 100);
+}
+
+function renderGsiButton_() {
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: window.__stocklabOnCredential });
+  google.accounts.id.renderButton(document.getElementById("gsi-button"), { theme: "outline", size: "large" });
+  google.accounts.id.prompt();
+}
+
+function showLoginOverlay(message) {
+  const ov = document.getElementById("login-overlay");
+  if (ov) ov.hidden = false;
+  const err = document.getElementById("login-error");
+  if (err) { err.hidden = !message; err.textContent = message || ""; }
+  whenGsiReady_(renderGsiButton_);
+}
+function hideLoginOverlay() { const ov = document.getElementById("login-overlay"); if (ov) ov.hidden = true; }
+
+// 登入/登出等待時（打後端 + 冷啟動要數秒），把 Google 按鈕換成 spinner + 文字，
+// 避免使用者以為沒反應而重複點擊。
+function setOverlayBusy_(busy, text) {
+  const ov = document.getElementById("login-overlay");
+  const loading = document.getElementById("login-loading");
+  const label = document.getElementById("login-loading-text");
+  const btn = document.getElementById("gsi-button");
+  if (busy && ov) ov.hidden = false;
+  if (label && text) label.textContent = text;
+  if (loading) loading.hidden = !busy;
+  if (btn) btn.style.display = busy ? "none" : "";
+}
+
+window.__stocklabOnCredential = async function (response) {
+  const errEl = document.getElementById("login-error");
+  if (errEl) errEl.hidden = true;
+  setOverlayBusy_(true, "登入中…");
+  try {
+    const idToken = response && response.credential;
+    currentUser = await Api.login(idToken);
+    hideLoginOverlay();
+    initApp();
+  } catch (err) {
+    setOverlayBusy_(false);
+    if (errEl) { errEl.hidden = false; errEl.textContent = (err && err.message) || "登入失敗"; }
+  }
+};
+
+// 登出：先顯示「登出中…」再 reload，讓等待有回饋。
+function doLogout_() {
+  setOverlayBusy_(true, "登出中…");
+  Api.logout().finally(() => location.reload());
+}
+
+// 供 api.js 靜默續期：回傳新的 idToken 或 null。
+// api.js 的 jsonp() 會直接 await 這個 Promise、沒有自己的逾時，
+// 所以這裡一定要保證會 resolve——多加一個 8 秒安全逾時，
+// 避免 GIS 卡住或 callback 沒被呼叫時把整個重試流程吊死。
+Api.setSilentReauth(() => new Promise(resolve => {
+  if (!(window.google && google.accounts && google.accounts.id)) return resolve(null);
+  let settled = false;
+  const finish = (value) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(to);
+    resolve(value);
+  };
+  const to = setTimeout(() => finish(null), 8000);
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: r => finish(r && r.credential) });
+  google.accounts.id.prompt(notification => { if (notification.isNotDisplayed() || notification.isSkippedMoment()) finish(null); });
+}));
+
+function bootstrapAuth() {
+  if (!Api.hasSession()) { showLoginOverlay(""); return; }
+  // 用既有 session 進來時，還原快取的使用者身分（決定是否顯示 admin 分頁）。
+  currentUser = Api.getStoredUser();
+  // 有 session：直接進 app；若 session 已失效，第一個受保護請求會觸發 silent reauth 或跳登入
+  initApp();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  bootstrapAuth();
+});
+
+// admin 白名單面板：僅 currentUser.isAdmin 時顯示與填入資料，
+// 後端 listUsers/addUser/updateUser/removeUser 對非 admin 一律回 FORBIDDEN，
+// 這裡的隱藏只是 UX，不是安全邊界。
+function adminStatus_(message, isError) {
+  const el = document.getElementById("admin-status");
+  if (!el) return;
+  el.hidden = !message;
+  el.textContent = message || "";
+  el.classList.toggle("is-error", Boolean(isError));
+}
+
+async function renderAdminPanel() {
+  if (!currentUser || !currentUser.isAdmin) return;
+  const navBtn = document.getElementById("navAdmin");
+  if (navBtn) navBtn.hidden = false;
+  const tbody = document.querySelector("#admin-user-table tbody");
+  if (!tbody) return;
+  try {
+    const res = await Api.listUsers();
+    tbody.innerHTML = (res.users || []).map(u => {
+      const active = u.status === "active";
+      const isAdmin = u.role === "admin";
+      const email = escapeHtml(u.email);
+      return `<tr><td>${email}</td><td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.status)}</td>`
+        + `<td class="admin-actions">`
+        + `<button data-admin="role" data-email="${email}" data-role="${isAdmin ? "user" : "admin"}">${isAdmin ? "設為 user" : "設為 admin"}</button>`
+        + `<button data-admin="toggle" data-email="${email}" data-status="${active ? "disabled" : "active"}">${active ? "停用" : "啟用"}</button>`
+        + `<button data-admin="remove" data-email="${email}" class="danger">刪除</button>`
+        + `</td></tr>`;
+    }).join("");
+    adminStatus_("", false);
+  } catch (err) {
+    adminStatus_((err && err.message) || "載入帳號清單失敗", true);
+  }
+}
+
+async function onAdminAddSubmit(e) {
+  e.preventDefault();
+  const emailInput = document.getElementById("admin-add-email");
+  const email = emailInput.value;
+  const role = document.getElementById("admin-add-role").value;
+  try {
+    await Api.addUser(email, role);
+    adminStatus_("已新增 " + email + "（" + role + "）", false);
+    emailInput.value = "";
+  } catch (err) {
+    adminStatus_((err && err.message) || "新增失敗", true);
+  }
+  renderAdminPanel();
+}
+
+function initApp() {
   cleanupLocalCaches();
   setAppVersionLabel();
   // 後端版本改由 dashboard payload 的 data.version 帶回（renderDashboard 設定），
@@ -186,6 +346,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
   document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
   document.getElementById("watchlistForm").addEventListener("submit", onSubmitWatchlist);
+  document.getElementById("admin-add-form").addEventListener("submit", onAdminAddSubmit);
   document.addEventListener("click", onDocumentClick);
 
   document.getElementById("transactionForm").addEventListener("submit", onSubmitTransaction);
@@ -228,7 +389,8 @@ document.addEventListener("DOMContentLoaded", () => {
   if (mobileMore) mobileMore.addEventListener("click", openMobileMore);
   window.addEventListener("hashchange", () => changePage(window.location.hash, { replaceHash: true }));
   buildMobileMoreLinks();
-});
+  renderAdminPanel();
+}
 
 
 function detectDeviceMode() {
@@ -729,15 +891,14 @@ async function onSubmitWatchlist(event) {
 }
 
 async function onDocumentClick(event) {
+  if (event.target.closest('[data-action="logout"]')) {
+    doLogout_();
+    return;
+  }
   if (event.target.closest('[data-action="prompt-access-key"]')) {
-    // 只有後端有設 STOCKLAB_API_TOKEN 時才會走到這裡。
-    // 沒設的話前端不會詢問金鑰，這個畫面也不會出現。
-    if (Api.promptAccessKey && Api.promptAccessKey()) {
-      pageDataCache.dashboard = null;
-      pageDataCache.portfolio = null;
-      pageDataCache.transactions = null;
-      changePage(window.location.hash || "dashboard", { replaceHash: true });
-    }
+    // 舊的「重新輸入存取金鑰」入口已由 Google 登入取代：
+    // session 失效時直接登出、回到登入畫面重新走一次登入流程。
+    doLogout_();
     return;
   }
   if (event.target.closest('[data-action="close-trade-modal"]')) {
@@ -827,6 +988,30 @@ async function onDocumentClick(event) {
   const removePendingButton = event.target.closest('[data-action="remove-pending-transaction"]');
   if (removePendingButton) {
     removeCachedTransaction(removePendingButton.dataset.id || "");
+    return;
+  }
+  const adminButton = event.target.closest("[data-admin]");
+  if (adminButton) {
+    const email = adminButton.getAttribute("data-email");
+    const kind = adminButton.getAttribute("data-admin");
+    if (kind === "remove" && !confirm("確定刪除 " + email + "？")) return;
+    try {
+      if (kind === "toggle") {
+        const status = adminButton.getAttribute("data-status");
+        await Api.updateUser(email, { status });
+        adminStatus_((status === "disabled" ? "已停用 " : "已啟用 ") + email, false);
+      } else if (kind === "role") {
+        const role = adminButton.getAttribute("data-role");
+        await Api.updateUser(email, { role });
+        adminStatus_("已將 " + email + " 設為 " + role, false);
+      } else if (kind === "remove") {
+        await Api.removeUser(email);
+        adminStatus_("已刪除 " + email, false);
+      }
+    } catch (err) {
+      adminStatus_((err && err.message) || "操作失敗", true);
+    }
+    renderAdminPanel();
     return;
   }
 
@@ -945,6 +1130,7 @@ function prefillSellQuantity(event) {
 function changePage(pageName, options = {}) {
   const requestedPage = String(pageName || "dashboard").replace(/^#/, "");
   pageName = resolvePageName(requestedPage);
+  if (pageName === "admin" && !(currentUser && currentUser.isAdmin)) pageName = "dashboard";
   if (!pages[pageName] || !document.getElementById(pageName + "Page")) pageName = "dashboard";
   closeMobileMore();
   document.querySelectorAll(".nav-btn").forEach(btn => {
@@ -2750,7 +2936,7 @@ function showAuthRequired(target, err) {
   const body = `<div class="v11-empty error-state">`
     + `<strong>需要存取金鑰</strong>`
     + `<p>${escapeHtml((err && err.message) || "存取金鑰錯誤或已失效")}</p>`
-    + `<p><button type="button" data-action="prompt-access-key">重新輸入存取金鑰</button></p>`
+    + `<p><button type="button" data-action="prompt-access-key">重新登入</button></p>`
     + `</div>`;
   if (container.tagName === "TBODY") {
     const table = container.closest("table");

@@ -9,12 +9,24 @@
        讓 DNS/TLS 握手與 HTML/JS 解析並行，省下首次請求的連線建立時間。 -->
   <link rel="preconnect" href="https://script.google.com" crossorigin />
   <link rel="dns-prefetch" href="https://script.googleusercontent.com" />
+  <link rel="preconnect" href="https://accounts.google.com" crossorigin />
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.14" />
+  <link rel="stylesheet" href="css/style.css?v=11.15" />
+  <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
+  <div id="login-overlay" class="login-overlay" hidden>
+    <div class="login-card">
+      <h1>StockLab</h1>
+      <p>請使用授權的 Google 帳號登入</p>
+      <div id="gsi-button"></div>
+      <div id="login-loading" class="login-loading" hidden><span class="login-spinner" aria-hidden="true"></span><span id="login-loading-text">登入中…</span></div>
+      <p id="login-error" class="login-error" hidden></p>
+    </div>
+  </div>
+
   <div class="app">
     <aside class="sidebar">
       <div class="logo">StockLab</div>
@@ -28,8 +40,10 @@
         <button class="nav-btn" data-page="market">市場總覽</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
         <button class="nav-btn" data-page="analysis">線圖分析</button>
+        <button class="nav-btn" data-page="admin" id="navAdmin" hidden>帳號管理</button>
         <button class="nav-btn mobile-more-btn" id="btnMobileMore" type="button">更多</button>
       </nav>
+      <button type="button" class="sidebar-logout-btn" data-action="logout">登出</button>
     </aside>
 
     <main class="main">
@@ -282,6 +296,26 @@
         </div>
       </section>
 
+      <section id="adminPage" class="page">
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>帳號管理</h2>
+              <div class="muted">白名單帳號才能登入。角色 admin 可管理帳號；user 只能看資料（資料目前全體共用）。</div>
+            </div>
+          </div>
+          <form id="admin-add-form" class="admin-add-form">
+            <input type="email" id="admin-add-email" placeholder="要授權的 Google email" required />
+            <select id="admin-add-role"><option value="user">user</option><option value="admin">admin</option></select>
+            <button type="submit">新增</button>
+          </form>
+          <div id="admin-status" class="admin-status" hidden></div>
+          <div class="table-wrap">
+            <table id="admin-user-table"><thead><tr><th>email</th><th>角色</th><th>狀態</th><th>操作</th></tr></thead><tbody></tbody></table>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 
@@ -376,9 +410,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script defer src="js/config.js?v=11.14"></script>
-  <script defer src="js/api.js?v=11.14"></script>
-  <script defer src="js/indicator-explain.js?v=11.14"></script>
-  <script defer src="js/app.js?v=11.14"></script>
+  <script defer src="js/config.js?v=11.15"></script>
+  <script defer src="js/api.js?v=11.15"></script>
+  <script defer src="js/indicator-explain.js?v=11.15"></script>
+  <script defer src="js/app.js?v=11.15"></script>
 </body>
 </html>

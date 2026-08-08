@@ -94,6 +94,11 @@ body {
   font-size: 15px;
 }
 
+.sidebar-logout-btn {
+  width: 100%;
+  margin-top: 20px;
+}
+
 .nav-btn.active,
 .nav-btn:hover {
   background: #1e293b;
@@ -2395,6 +2400,123 @@ body.detail-sheet-open {
 }
 
 .error-state strong {
+  color: var(--red);
+}
+
+.login-overlay[hidden] {
+  display: none;
+}
+
+.login-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #050816;
+  z-index: 9999;
+}
+
+.login-card {
+  width: min(360px, calc(100vw - 48px));
+  text-align: center;
+  padding: 32px 28px;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  color: var(--blue);
+}
+
+.login-card p {
+  color: var(--muted);
+  margin: 0 0 20px;
+}
+
+#gsi-button {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+.login-error[hidden] {
+  display: none;
+}
+
+.login-error {
+  color: var(--red);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.login-loading[hidden] {
+  display: none;
+}
+
+.login-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.login-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(148, 163, 184, 0.3);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: login-spin 0.7s linear infinite;
+}
+
+@keyframes login-spin {
+  to { transform: rotate(360deg); }
+}
+
+.admin-add-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 12px 0;
+}
+
+.admin-add-form input[type="email"] {
+  flex: 1 1 240px;
+}
+
+.admin-status[hidden] {
+  display: none;
+}
+
+.admin-status {
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.admin-status.is-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red);
+}
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.admin-actions .danger {
   color: var(--red);
 }
 
