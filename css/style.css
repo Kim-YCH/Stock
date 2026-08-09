@@ -834,9 +834,10 @@ button:hover {
     margin-top: 10px;
   }
 
-  /* B：變更欄位/線別選單手機「靠左展開」+ 加寬留邊。
-     桌面版錨 right:0（靠右按鈕）；手機版按鈕在左側，若仍 right:0 會往左溢出畫面被切，故改 left:0。 */
-  .column-menu { left: 0; right: auto; min-width: 220px; max-width: calc(100vw - 40px); }
+  /* B/#1：手機下拉加寬留邊，且各自「朝畫面內側」展開避免溢出被切：
+     關注(＋/✏️)在左上 → 靠左展開(left:0)；線圖鉛筆在右上 → 靠右展開(沿用 base right:0)。 */
+  .column-menu { min-width: 220px; max-width: calc(100vw - 40px); }
+  #watchColumnMenu { left: 0; right: auto; }
 }
 
 .card-date {
