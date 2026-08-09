@@ -239,10 +239,14 @@ h1, h2, h3 {
    明確補這條，讓隱藏欄在所有裝置都真的隱藏。 */
 [data-col][hidden] { display: none !important; }
 
-/* 線圖頁「選擇顯示的線」：仿關注清單，由鉛筆(✏️) 觸發下拉；legend 與鉛筆並排。 */
-.chart-legend-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+/* 線圖頁「選擇顯示的線」：仿關注清單，鉛筆(✏️) 在左、選單靠左往下展開（跟關注一致）。 */
+.chart-legend-bar { display: flex; justify-content: flex-start; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .line-menu-wrap { position: relative; }
-.line-controls.column-menu { display: grid; gap: 8px; }
+/* 靠左展開（鉛筆在左，避免溢出）。 */
+.line-controls.column-menu { left: 0; right: auto; }
+/* display 只在「未收合」時套用——否則會與 .column-menu[hidden]{display:none} 同特異性、
+   因排在後面而蓋掉它，導致 hidden 屬性失效、選單永遠關不掉。 */
+.line-controls.column-menu:not([hidden]) { display: grid; gap: 8px; }
 .line-control { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .line-swatch { width: 16px; height: 3px; border-radius: 2px; display: inline-block; flex: 0 0 auto; }
 
