@@ -916,8 +916,16 @@ async function onDocumentClick(event) {
   if (watchColumnMenuEl && !watchColumnMenuEl.hidden && !event.target.closest("#watchColumnMenu") && !event.target.closest("#btnWatchColumns")) {
     watchColumnMenuEl.hidden = true;
   }
+  const analysisLineMenuEl = document.getElementById("analysisLineControls");
+  if (analysisLineMenuEl && !analysisLineMenuEl.hidden && !event.target.closest("#analysisLineControls") && !event.target.closest("#btnAnalysisLines")) {
+    analysisLineMenuEl.hidden = true;
+  }
   if (event.target.closest("#btnWatchColumns")) {
     toggleWatchColumnMenu_();
+    return;
+  }
+  if (event.target.closest("#btnAnalysisLines")) {
+    if (analysisLineMenuEl) analysisLineMenuEl.hidden = !analysisLineMenuEl.hidden;
     return;
   }
   if (event.target.closest('[data-action="logout"]')) {
@@ -1129,12 +1137,14 @@ function onGlobalEscape(event) {
   const backfill = document.getElementById("backfillSheet");
   const detail = document.getElementById("dashboardDetailSheet");
   const columnMenu = document.getElementById("watchColumnMenu");
+  const lineMenu = document.getElementById("analysisLineControls");
   const mobileMore = document.getElementById("mobileMoreSheet");
   if (trade && !trade.hidden) closeTradeModal();
   if (notifications && !notifications.hidden) closeNotificationSheet();
   if (backfill && !backfill.hidden) closeBackfillSheet();
   if (detail && !detail.hidden) closeDashboardDetail();
   if (columnMenu && !columnMenu.hidden) columnMenu.hidden = true;
+  if (lineMenu && !lineMenu.hidden) lineMenu.hidden = true;
   if (mobileMore && !mobileMore.hidden) closeMobileMore();
 }
 

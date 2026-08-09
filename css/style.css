@@ -239,6 +239,13 @@ h1, h2, h3 {
    明確補這條，讓隱藏欄在所有裝置都真的隱藏。 */
 [data-col][hidden] { display: none !important; }
 
+/* 線圖頁「選擇顯示的線」：仿關注清單，由鉛筆(✏️) 觸發下拉；legend 與鉛筆並排。 */
+.chart-legend-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.line-menu-wrap { position: relative; }
+.line-controls.column-menu { display: grid; gap: 8px; }
+.line-control { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.line-swatch { width: 16px; height: 3px; border-radius: 2px; display: inline-block; flex: 0 0 auto; }
+
 .candidate-toolbar {
   display: flex;
   align-items: end;
@@ -827,8 +834,9 @@ button:hover {
     margin-top: 10px;
   }
 
-  /* B：變更欄位選單手機加寬 + 留邊，避免又窄又貼右邊被切。 */
-  .column-menu { min-width: 220px; max-width: calc(100vw - 40px); }
+  /* B：變更欄位/線別選單手機「靠左展開」+ 加寬留邊。
+     桌面版錨 right:0（靠右按鈕）；手機版按鈕在左側，若仍 right:0 會往左溢出畫面被切，故改 left:0。 */
+  .column-menu { left: 0; right: auto; min-width: 220px; max-width: calc(100vw - 40px); }
 }
 
 .card-date {
@@ -1944,8 +1952,12 @@ body.floating-sheet-open {
     padding: 0 14px 18px;
   }
 
+  /* #3：手機圖表比例——SVG preserveAspectRatio="none" 會拉伸填滿容器；
+     手機容器太接近正方(如 330px 高)會把 K 線拉胖、比例怪。改用接近圖表原生的寬高比。 */
   .analysis-chart-panel .chart-wrap {
-    min-height: 280px;
+    height: auto !important;
+    min-height: 0;
+    aspect-ratio: 16 / 9;
   }
 }
 
