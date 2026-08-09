@@ -10,16 +10,16 @@
 //
 // 發版檢查清單：改版時把 CACHE_VERSION 一起 bump（與 APP_VERSION 對齊），
 // 讓 activate 清掉舊快取、避免卡舊殼層。
-const CACHE_VERSION = "v11.15";
+const CACHE_VERSION = "v11.17";
 const CACHE_NAME = "stocklab-shell-" + CACHE_VERSION;
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=11.15",
-  "./js/config.js?v=11.15",
-  "./js/api.js?v=11.15",
-  "./js/indicator-explain.js?v=11.15",
-  "./js/app.js?v=11.15",
+  "./css/style.css?v=11.17",
+  "./js/config.js?v=11.17",
+  "./js/api.js?v=11.17",
+  "./js/indicator-explain.js?v=11.17",
+  "./js/app.js?v=11.17",
   "./icons/favicon.svg",
   "./manifest.json"
 ];
@@ -60,15 +60,26 @@ self.addEventListener("fetch", event => {
     url.pathname.endsWith("index.html");
 
   if (isNavigation) {
-    // network-first：部署後一定拿到新版 index.html；離線才回快取。
+    // network-first，但網路「慢而不死」時（lie-fi）不能無限等——跟 3 秒逾時賽跑，
+    // 逾時就先用快取殼層讓使用者看到畫面，網路真的回來時仍在背景把快取更新成最新版。
     event.respondWith(
-      fetch(request)
-        .then(response => {
+      (() => {
+        const networkFetch = fetch(request).then(response => {
           const copy = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(request, copy)).catch(() => {});
           return response;
-        })
-        .catch(() => caches.match(request).then(hit => hit || caches.match("./index.html")))
+        });
+        // 網路請求本身仍在背景繼續跑，即使逾時分支先回應了也會更新快取；
+        // 這裡吞掉「已經逾時、沒人等它」情境下的 rejection，避免變成 unhandled rejection。
+        networkFetch.catch(() => {});
+        const timeout = new Promise(resolve => {
+          setTimeout(() => resolve(null), 3000);
+        });
+        return Promise.race([networkFetch, timeout]).then(response => {
+          if (response) return response;
+          return caches.match(request).then(hit => hit || caches.match("./index.html"));
+        }).catch(() => caches.match(request).then(hit => hit || caches.match("./index.html")));
+      })()
     );
     return;
   }

@@ -21,6 +21,30 @@ const Api = (() => {
   let silentReauth = null;
   function setSilentReauth(fn) { silentReauth = fn; }
 
+  // 單飛（single-flight）重登：多個請求同時因 AUTH 失敗時，GIS 的靜默重新
+  // 登入是單例 callback，不能並發呼叫（後一次呼叫會蓋掉前一次，讓前面的
+  // caller 卡到逾時才失敗）。所以所有並發的 AUTH 失敗共用同一個
+  // 「靜默取 idToken + login 換新 session」promise；settle 後清掉，讓下一次
+  // 新的 AUTH 失敗可以重新觸發。
+  let reauthPromise = null;
+  function reauthAndLogin() {
+    if (!reauthPromise) {
+      // 清掉 in-flight 標記放進同一個 async IIFE 的 finally，而不是外部再
+      // 鏈一個 .finally()——後者會多出一條沒人接的 promise 鏈，reauth 失敗
+      // 時（idToken 為空）會變成 Node 認定的 unhandled rejection。
+      reauthPromise = (async () => {
+        try {
+          const idToken = await silentReauth();
+          if (!idToken) throw authError("靜默重新登入未取得 idToken");
+          return await login(idToken);
+        } finally {
+          reauthPromise = null;
+        }
+      })();
+    }
+    return reauthPromise;
+  }
+
   function getStoredSession() {
     try { return localStorage.getItem(SESSION_STORAGE) || ""; } catch (e) { return ""; }
   }
@@ -46,10 +70,26 @@ const Api = (() => {
     try { localStorage.removeItem(USER_STORAGE); } catch (e) {}
   }
 
+  // 共用瀏覽器的多使用者衛生：dashboard/transactions 等資料快取一律以
+  // "stocklab_cache_" 為前綴（見 app.js 的 CACHE_KEYS）。登出，或登入的
+  // email 與上一個使用者不同時，把這些快取全部清掉，避免 B 看到 A 的資料。
+  const DATA_CACHE_PREFIX = "stocklab_cache_";
+  function purgeDataCaches() {
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (key.indexOf(DATA_CACHE_PREFIX) === 0) localStorage.removeItem(key);
+      });
+    } catch (e) {}
+  }
+
   async function login(idToken) {
+    const previousUser = getStoredUser();
     const data = await jsonpRaw("login", { idToken });
     if (data && data.session) setStoredSession(data.session);
     const user = { email: data.email, role: data.role, isAdmin: data.isAdmin === true };
+    if (previousUser && previousUser.email && user.email && previousUser.email !== user.email) {
+      purgeDataCaches();
+    }
     setStoredUser(user);
     return user;
   }
@@ -57,6 +97,7 @@ const Api = (() => {
     const s = getStoredSession();
     clearSession();
     clearStoredUser();
+    purgeDataCaches();
     if (s) { try { await jsonpRaw("logout", { session: s }); } catch (e) {} }
   }
 
@@ -79,9 +120,11 @@ const Api = (() => {
       return await jsonpRaw(action, params);
     } catch (err) {
       if (!err || err.code !== "AUTH" || !silentReauth) throw err;
-      const idToken = await silentReauth();     // GIS 靜默取新 ID token
-      if (!idToken) throw err;
-      await login(idToken);                     // 換新 session
+      try {
+        await reauthAndLogin();                 // 並發 AUTH 共用同一次靜默重登 + 換 session
+      } catch (reauthErr) {
+        throw err;                              // 靜默重登失敗：往外丟原本的 AUTH 錯誤
+      }
       return jsonpRaw(action, params);          // 只重試一次
     }
   }

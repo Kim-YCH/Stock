@@ -211,12 +211,33 @@ h1, h2, h3 {
 }
 
 .panel-header {
+  position: relative;
   display: flex;
   justify-content: space-between;
   align-items: start;
   gap: 16px;
   margin-bottom: 18px;
 }
+
+.column-menu[hidden] { display: none; }
+.column-menu {
+  position: absolute; top: 100%; right: 0; z-index: 50; margin-top: 8px; padding: 10px 12px;
+  background: rgba(15,23,42,0.98); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.35); display: grid; gap: 6px; min-width: 160px;
+}
+.column-menu-item { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+
+/* 關注清單工具列：新增(＋) 與 變更欄位(✏️) 並排成兩顆 icon 按鈕，欄位選單錨定在其正下方。 */
+.watch-actions { position: relative; display: flex; align-items: center; gap: 8px; }
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; min-height: 42px; padding: 0; font-size: 18px; line-height: 1;
+}
+
+/* 變更欄位取消勾選的欄位：手機卡片模式的 td{display:flex} 會蓋掉瀏覽器預設的
+   [hidden]{display:none}，導致隱藏欄在手機又冒出來、卡片變得又長又亂、欄位選擇形同失效。
+   明確補這條，讓隱藏欄在所有裝置都真的隱藏。 */
+[data-col][hidden] { display: none !important; }
 
 .candidate-toolbar {
   display: flex;
@@ -235,6 +256,12 @@ h1, h2, h3 {
 }
 
 .candidate-actions { display: flex; align-items: end; gap: 10px; }
+
+/* 手機版關注清單排序：thead 在 ≤650px 被隱藏（見下方 media query），
+   header 排序按鈕摸不到，平常桌機版就不顯示這顆下拉選單。 */
+.watch-mobile-sort {
+  display: none;
+}
 
 .candidate-section table {
   min-width: 1040px;
@@ -263,15 +290,21 @@ h1, h2, h3 {
 .switch-label { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 
 .up {
-  color: var(--green);
-}
-
-.down {
   color: var(--red);
 }
 
+.down {
+  color: var(--green);
+}
+
+.td-inst { text-align: right; white-space: nowrap; }
+
 .warn {
   color: var(--yellow);
+}
+
+.metric-alert {
+  color: var(--red);
 }
 
 .table-wrap {
@@ -347,7 +380,14 @@ th {
   color: var(--yellow);
 }
 
+/* 台股慣例（漲紅跌綠）：空頭/偏弱維持 danger 這個 class 名稱，但改為綠色。 */
 .badge.danger {
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--green);
+}
+
+/* 多頭/偏多/強勢：紅色徽章，不再依賴 .badge 綠色預設。 */
+.badge.bull {
   background: rgba(239, 68, 68, 0.14);
   color: var(--red);
 }
@@ -780,6 +820,15 @@ button:hover {
   }
 
   .candidate-actions { width: 100%; align-items: stretch; flex-direction: column; }
+
+  .watch-mobile-sort {
+    display: grid;
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  /* B：變更欄位選單手機加寬 + 留邊，避免又窄又貼右邊被切。 */
+  .column-menu { min-width: 220px; max-width: calc(100vw - 40px); }
 }
 
 .card-date {
@@ -810,9 +859,8 @@ body.device-mobile .chart-wrap {
   height: 300px;
 }
 
-body.device-mobile .table-wrap table {
-  min-width: 780px;
-}
+/* D：手機一律走卡片模式，不再對表格強制 780px 最小寬（那會造成手機橫向捲動）。
+   ≤650px 的卡片模式已把 table min-width 設 0；此處移除 device-mobile 的強制寬度。 */
 
 
 /* v5 mobile readability: 手機改成較大字級與卡片式列表 */
@@ -907,10 +955,14 @@ body.device-mobile .table-wrap table {
     border-radius: 16px;
     padding: 12px 14px;
     margin-bottom: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 14px;
   }
 
   td {
     display: flex;
+    flex: 1 1 100%;
     justify-content: space-between;
     align-items: center;
     gap: 14px;
@@ -920,6 +972,12 @@ body.device-mobile .table-wrap table {
     white-space: normal;
     font-size: 17px;
   }
+
+  /* C：三大法人(外資/投信/自營商)這三個短數字欄在卡片裡並排 2 欄，降低卡片高度。
+     其餘欄維持整列（td 預設 flex:1 1 100%）。只有關注清單有這三個 data-col，故不影響其他表。 */
+  td[data-col="foreignNet"],
+  td[data-col="trustNet"],
+  td[data-col="dealerNet"] { flex: 1 1 calc(50% - 7px); }
 
   td:last-child {
     border-bottom: 0;
@@ -2024,10 +2082,11 @@ button.dashboard-metric-card {
   font-size: 20px;
 }
 
-.score-strong { color: var(--green) !important; }
+/* 品質/強弱分數色與漲跌方向無關，改用中性色避免與 .up/.down 紅綠語意衝突：強=藍、弱=灰。 */
+.score-strong { color: var(--blue) !important; }
 .score-good { color: var(--yellow) !important; }
 .score-neutral { color: var(--muted) !important; }
-.score-weak { color: var(--red) !important; }
+.score-weak { color: var(--muted) !important; }
 
 .stock-cell {
   display: grid;
@@ -2063,9 +2122,10 @@ button.dashboard-metric-card {
   font-weight: 700;
 }
 
+/* RSI/ADX/量能等指標品質色與漲跌方向無關，改用中性色避免與 .up/.down 紅綠語意衝突：強=藍、弱=灰。 */
 .indicator-up,
-.volume-strong { color: var(--green); }
-.indicator-down { color: var(--red); }
+.volume-strong { color: var(--blue); }
+.indicator-down { color: var(--muted); }
 .indicator-warn { color: var(--yellow); }
 .indicator-flat,
 .volume-muted { color: var(--muted); }

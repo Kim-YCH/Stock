@@ -99,6 +99,10 @@ const CACHE_TTL_MS = {
 };
 const analysisMemoryCache = new Map();
 const analysisRequests = new Map();
+// symbol -> 該股票目前「最新啟動」的請求世代編號。用來擋掉較慢的舊請求
+// （例如先點進頁面觸發的 cached 請求，比之後按「重新整理」的 force 請求晚回來）
+// 覆蓋掉剛剛才寫入的新鮮資料。
+const analysisFetchGeneration = new Map();
 const ANALYSIS_LINE_OPTIONS = [
   { key: "ma5", label: "MA5", color: "#f97316", default: false },
   { key: "ma20", label: "MA20", color: "#38bdf8", default: true },
@@ -346,6 +350,19 @@ function initApp() {
   document.getElementById("btnToggleWatchForm").addEventListener("click", toggleWatchForm);
   document.getElementById("btnEmptyAddWatch").addEventListener("click", () => toggleWatchForm(true));
   document.getElementById("watchlistForm").addEventListener("submit", onSubmitWatchlist);
+  const watchMobileSortEl = document.getElementById("watchlistMobileSort");
+  if (watchMobileSortEl) {
+    // thead 在 ≤650px 被隱藏，header 上的排序按鈕摸不到，這個 <select> 是手機版唯一的排序入口。
+    watchMobileSortEl.addEventListener("change", (e) => setWatchlistSort(e.target.value));
+  }
+  document.getElementById("watchColumnMenu").addEventListener("change", (e) => {
+    const cb = e.target.closest("[data-colkey]"); if (!cb) return;
+    const key = cb.getAttribute("data-colkey");
+    const cols = getWatchVisibleColumns_().filter(k => k !== key);
+    if (cb.checked) cols.push(key);
+    setWatchVisibleColumns_(cols);
+    applyWatchColumnVisibility_();
+  });
   document.getElementById("admin-add-form").addEventListener("submit", onAdminAddSubmit);
   document.addEventListener("click", onDocumentClick);
 
@@ -390,6 +407,7 @@ function initApp() {
   window.addEventListener("hashchange", () => changePage(window.location.hash, { replaceHash: true }));
   buildMobileMoreLinks();
   renderAdminPanel();
+  applyWatchColumnVisibility_();
 }
 
 
@@ -573,8 +591,11 @@ async function refreshAppVersion() {
   showToast("正在重新載入最新版...");
   try {
     clearPageMemoryCache();
+    // 保留登入狀態（session/user）與版面設定，只清資料快取——
+    // 「更新版本」是重載最新程式碼，不該連帶把使用者登出。
+    const KEEP_ON_VERSION_REFRESH = new Set(["stocklab_watch_columns", "stocklab_session", "stocklab_user"]);
     Object.keys(localStorage).forEach(key => {
-      if (key.startsWith("stocklab_")) localStorage.removeItem(key);
+      if (key.startsWith("stocklab_") && !KEEP_ON_VERSION_REFRESH.has(key)) localStorage.removeItem(key);
     });
 
   } catch (error) {
@@ -891,6 +912,14 @@ async function onSubmitWatchlist(event) {
 }
 
 async function onDocumentClick(event) {
+  const watchColumnMenuEl = document.getElementById("watchColumnMenu");
+  if (watchColumnMenuEl && !watchColumnMenuEl.hidden && !event.target.closest("#watchColumnMenu") && !event.target.closest("#btnWatchColumns")) {
+    watchColumnMenuEl.hidden = true;
+  }
+  if (event.target.closest("#btnWatchColumns")) {
+    toggleWatchColumnMenu_();
+    return;
+  }
   if (event.target.closest('[data-action="logout"]')) {
     doLogout_();
     return;
@@ -1025,6 +1054,9 @@ async function onDocumentClick(event) {
   const ok = confirm(`確定要移除 ${displaySymbol(symbol, name)} ${name} 嗎？`);
   if (!ok) return;
 
+  // 樂觀移除前先拍快照，失敗時仿 onDeleteTransaction 回滾，避免後端還在關注
+  // 但畫面／快取已經悄悄把它移除，之後重新整理才又冒出來，看起來像資料閃爍。
+  const previousItem = (currentWatchlistItems || []).find(row => normalizeSymbolInput(row.symbol) === normalizeSymbolInput(symbol));
   removeCachedWatchlistItem(symbol);
 
   try {
@@ -1037,6 +1069,8 @@ async function onDocumentClick(event) {
     await loadDashboard();
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
+    if (previousItem) upsertCachedWatchlistItem(previousItem);
+    showToast("移除失敗，已恢復原關注股票", "error");
   } finally {
     btn.disabled = false;
   }
@@ -1094,10 +1128,14 @@ function onGlobalEscape(event) {
   const notifications = document.getElementById("notificationSheet");
   const backfill = document.getElementById("backfillSheet");
   const detail = document.getElementById("dashboardDetailSheet");
+  const columnMenu = document.getElementById("watchColumnMenu");
+  const mobileMore = document.getElementById("mobileMoreSheet");
   if (trade && !trade.hidden) closeTradeModal();
   if (notifications && !notifications.hidden) closeNotificationSheet();
   if (backfill && !backfill.hidden) closeBackfillSheet();
   if (detail && !detail.hidden) closeDashboardDetail();
+  if (columnMenu && !columnMenu.hidden) columnMenu.hidden = true;
+  if (mobileMore && !mobileMore.hidden) closeMobileMore();
 }
 
 let tradeLookupRequest = 0;
@@ -1298,7 +1336,7 @@ function renderCandidates(data) {
           <td data-label="ATR">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
           <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
           <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
-          <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
+          <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
           <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
           <td data-label="建議">${escapeHtml(item.suggestion || "列入觀察")}</td>
         </tr>
@@ -1315,7 +1353,7 @@ function renderCandidates(data) {
             <td data-label="ATR">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
             <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
             <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
-            <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
+            <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
             <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
             <td data-label="建議">${escapeHtml(item.suggestion || "檢視持股")}</td>
           </tr>
@@ -1444,7 +1482,7 @@ function renderMarketCards(data) {
     dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷", explainKey: "MARKET_MODE", explainSymbol: "TAIEX" }),
     dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detailHtml: buildMarketIndicatorLine(marketState, taiex) }),
     dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, cls: "up", meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
-    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "down" : "warn", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
+    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "metric-alert" : "warn", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
     dashboardMetricCard({ title: "今日候選", value: `買入 ${number(signals.buyCount)} · 賣出 ${number(signals.sellCount)}`, meta: "查看技術條件明細", action: "signals" }),
     dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta, explainKey: "TECH_SCORE", explainSymbol: "MARKET_AVERAGE" })
   ].join("");
@@ -1576,6 +1614,82 @@ function reorderWatchlistRows() {
   tbody.appendChild(fragment);
 }
 
+// 可切換欄位（股票/操作鎖定不列入）。key 對應 <th> 的欄位順序（用 nth 對齊 th/td）。
+const WATCH_TOGGLEABLE_COLUMNS = [
+  { key: "changePercent", label: "漲跌幅" }, { key: "totalScore", label: "技術分數" },
+  { key: "trendText", label: "狀態" }, { key: "rsi14", label: "RSI" },
+  { key: "adx14", label: "ADX" }, { key: "atrPercent", label: "ATR%" },
+  { key: "volumeRatio", label: "量比" }, { key: "foreignNet", label: "外資" },
+  { key: "trustNet", label: "投信" }, { key: "dealerNet", label: "自營商" },
+  { key: "signalSummary", label: "訊號" }, { key: "sparkline", label: "迷你線圖" }
+];
+// 預設（定案 A）：現有欄位 + 外資；投信/自營商預設收起。
+const WATCH_DEFAULT_COLUMNS = ["changePercent","totalScore","trendText","rsi14","adx14","atrPercent","volumeRatio","foreignNet","signalSummary","sparkline"];
+const WATCH_COLUMNS_STORAGE = "stocklab_watch_columns";
+
+// 讀取時把儲存的欄位狀態與目前的 WATCH_DEFAULT_COLUMNS 合併：
+// 舊格式是純陣列（可見欄位清單），沒有「使用者是否看過某個預設欄」的紀錄，
+// 導致日後新增的預設欄（例如外資）對已經自訂過欄位的使用者永遠不會出現。
+// 新格式改存 { cols, seenDefaults }，seenDefaults 是使用者上次儲存當下、
+// 完整的 WATCH_DEFAULT_COLUMNS 快照。任何目前不在 seenDefaults 裡的預設欄，
+// 代表使用者從未有機會決定過（多半是升級後新加入的預設欄），於是補為可見一次；
+// 一旦補過，之後就會被寫進 seenDefaults，使用者再次手動關閉時就不會被這個
+// 合併邏輯覆蓋——不會回頭蓋掉使用者刻意關閉的既有欄位。
+function getWatchVisibleColumns_() {
+  const raw = (() => { try { return localStorage.getItem(WATCH_COLUMNS_STORAGE); } catch (e) { return null; } })();
+  if (!raw) return WATCH_DEFAULT_COLUMNS.slice();
+
+  let stored = null;
+  try { stored = JSON.parse(raw); } catch (e) { return WATCH_DEFAULT_COLUMNS.slice(); }
+
+  const legacy = Array.isArray(stored);
+  const cols = legacy ? stored.slice() : (stored && Array.isArray(stored.cols) ? stored.cols.slice() : WATCH_DEFAULT_COLUMNS.slice());
+  const seenDefaults = !legacy && stored && Array.isArray(stored.seenDefaults) ? stored.seenDefaults : [];
+
+  const colSet = new Set(cols);
+  const seenSet = new Set(seenDefaults);
+  let migrated = false;
+  WATCH_DEFAULT_COLUMNS.forEach(key => {
+    if (!seenSet.has(key)) {
+      if (!colSet.has(key)) colSet.add(key);
+      seenSet.add(key);
+      migrated = true;
+    }
+  });
+
+  const result = Array.from(colSet);
+  if (migrated) setWatchVisibleColumns_(result);
+  return result;
+}
+function setWatchVisibleColumns_(cols) {
+  try {
+    localStorage.setItem(WATCH_COLUMNS_STORAGE, JSON.stringify({
+      cols,
+      // 存下當下完整的預設欄清單：使用者這次互動時，選單裡列出的所有欄位
+      // （含目前的所有預設欄）都算「已經看過並決定過」。
+      seenDefaults: WATCH_DEFAULT_COLUMNS.slice()
+    }));
+  } catch (e) {}
+}
+function applyWatchColumnVisibility_() {
+  const visible = new Set(getWatchVisibleColumns_());
+  document.querySelectorAll('#dashboardPage [data-col]').forEach(el => {
+    el.hidden = !visible.has(el.getAttribute("data-col"));
+  });
+}
+function renderWatchColumnMenu_() {
+  const visible = new Set(getWatchVisibleColumns_());
+  const menu = document.getElementById("watchColumnMenu");
+  menu.innerHTML = WATCH_TOGGLEABLE_COLUMNS.map(c =>
+    `<label class="column-menu-item"><input type="checkbox" data-colkey="${c.key}" ${visible.has(c.key) ? "checked" : ""}/> ${escapeHtml(c.label)}</label>`
+  ).join("");
+}
+function toggleWatchColumnMenu_() {
+  const menu = document.getElementById("watchColumnMenu");
+  if (menu.hidden) { renderWatchColumnMenu_(); menu.hidden = false; }
+  else menu.hidden = true;
+}
+
 function renderWatchlist(items) {
   const tbody = document.getElementById("watchlistBody");
   const empty = document.getElementById("emptyWatchlist");
@@ -1588,6 +1702,7 @@ function renderWatchlist(items) {
 
   if (!visibleItems.length) {
     tbody.innerHTML = "";
+    applyWatchColumnVisibility_();
     return;
   }
 
@@ -1614,19 +1729,33 @@ function renderWatchlist(items) {
     return `
       <tr data-symbol="${safeSymbol}">
         <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)}</small></div></td>
-        <td data-label="漲跌幅"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
-        <td data-label="技術分數">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
-        <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(statusText), item.symbol, `badge ${badgeClass}`)}</td>
-        <td data-label="RSI">${explainableButton("RSI", `${number(item.rsi14)} ${rsiArrow}`, item.symbol, `indicator-value ${rsiDirectionClass(item.rsiDirection)}`)}</td>
-        <td data-label="ADX">${explainableButton("ADX", adxValue === null ? "-" : number(adxValue), item.symbol, `indicator-value ${adxClass(adxValue)}`)}</td>
-        <td data-label="ATR%">${explainableButton("ATR_PERCENT", atrValue === null ? "-" : number(atrValue) + "%", item.symbol, `indicator-value ${atrClass(atrValue)}`)}</td>
-        <td data-label="量比">${explainableButton("VOLUME_RATIO", volumeValue === null ? "-" : number(volumeValue) + "x", item.symbol, `volume-ratio ${volumeRatioClass(volumeValue)}`)}</td>
-        <td data-label="訊號"><div class="signal-chips signal-chip-row">${renderSignalChips(signals, item.symbol)}</div></td>
-        <td data-label="迷你線圖" class="td-sparkline"><button class="sparkline-button" type="button" data-action="open-sparkline-stats" data-symbol="${safeSymbol}" title="${escapeHtml(sparkTitle)}">${sparkline(item.sparkline || [], "#38bdf8", 160, 36)}</button></td>
+        <td data-label="漲跌幅" data-col="changePercent"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
+        <td data-label="技術分數" data-col="totalScore">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
+        <td data-label="狀態" data-col="trendText">${explainableButton("TREND_TEXT", escapeHtml(statusText), item.symbol, `badge ${badgeClass}`)}</td>
+        <td data-label="RSI" data-col="rsi14">${explainableButton("RSI", `${number(item.rsi14)} ${rsiArrow}`, item.symbol, `indicator-value ${rsiDirectionClass(item.rsiDirection)}`)}</td>
+        <td data-label="ADX" data-col="adx14">${explainableButton("ADX", adxValue === null ? "-" : number(adxValue), item.symbol, `indicator-value ${adxClass(adxValue)}`)}</td>
+        <td data-label="ATR%" data-col="atrPercent">${explainableButton("ATR_PERCENT", atrValue === null ? "-" : number(atrValue) + "%", item.symbol, `indicator-value ${atrClass(atrValue)}`)}</td>
+        <td data-label="量比" data-col="volumeRatio">${explainableButton("VOLUME_RATIO", volumeValue === null ? "-" : number(volumeValue) + "x", item.symbol, `volume-ratio ${volumeRatioClass(volumeValue)}`)}</td>
+        <td data-label="外資" data-col="foreignNet" class="td-inst">${instNet(item.foreignNet)}</td>
+        <td data-label="投信" data-col="trustNet" class="td-inst">${instNet(item.trustNet)}</td>
+        <td data-label="自營商" data-col="dealerNet" class="td-inst">${instNet(item.dealerNet)}</td>
+        <td data-label="訊號" data-col="signalSummary"><div class="signal-chips signal-chip-row">${renderSignalChips(signals, item.symbol)}</div></td>
+        <td data-label="迷你線圖" data-col="sparkline" class="td-sparkline"><button class="sparkline-button" type="button" data-action="open-sparkline-stats" data-symbol="${safeSymbol}" title="${escapeHtml(sparkTitle)}">${sparkline(item.sparkline || [], "#38bdf8", 160, 36)}</button></td>
         <td data-label="操作"><button class="danger-btn" type="button" data-action="remove-watchlist" data-symbol="${safeSymbol}" data-name="${safeName}">移除</button></td>
       </tr>
     `;
   }).join("");
+
+  applyWatchColumnVisibility_();
+}
+
+function instNet(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  const cls = n > 0 ? "up" : (n < 0 ? "down" : "");
+  const sign = n > 0 ? "+" : "";
+  return `<span class="${cls}">${sign}${n.toLocaleString("en-US")}</span>`;
 }
 
 function dashboardStatusText(item) {
@@ -1772,7 +1901,7 @@ function signedNumber(value) {
 }
 
 function setWatchlistSort(key) {
-  const allowed = ["symbol", "date", "close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore", "trendText", "signalSummary"];
+  const allowed = ["symbol", "date", "close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "foreignNet", "trustNet", "dealerNet", "totalScore", "trendText", "signalSummary"];
   if (allowed.indexOf(key) < 0) return;
   if (watchlistSortState.key === key) {
     watchlistSortState.direction = watchlistSortState.direction === "asc" ? "desc" : "asc";
@@ -1787,7 +1916,7 @@ function compareWatchlistItems(a, b) {
   const key = watchlistSortState.key;
   if (!key) return 0;
   const direction = watchlistSortState.direction === "desc" ? -1 : 1;
-  const numericKeys = ["close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "totalScore"];
+  const numericKeys = ["close", "changePercent", "rsi14", "adx14", "atrPercent", "volumeRatio", "foreignNet", "trustNet", "dealerNet", "totalScore"];
   if (numericKeys.indexOf(key) >= 0) {
     const aBlank = a[key] === "" || a[key] === null || a[key] === undefined || !Number.isFinite(Number(a[key]));
     const bBlank = b[key] === "" || b[key] === null || b[key] === undefined || !Number.isFinite(Number(b[key]));
@@ -1811,6 +1940,10 @@ function updateWatchlistSortHeaders() {
     const th = button.closest("th");
     if (th) th.setAttribute("aria-sort", active ? (direction === "desc" ? "descending" : "ascending") : "none");
   });
+  const mobileSort = document.getElementById("watchlistMobileSort");
+  if (mobileSort && watchlistSortState.key && mobileSort.querySelector(`option[value="${watchlistSortState.key}"]`)) {
+    mobileSort.value = watchlistSortState.key;
+  }
 }
 
 async function loadPortfolio(options = {}) {
@@ -1867,15 +2000,17 @@ function renderPortfolioData(data) {
   const items = data.items || [];
   currentPortfolioItems = items.slice();
   const summary = data.summary || {};
-  const totalCost = Number(summary.totalCost ?? items.reduce((sum, x) => sum + Number(x.totalCost || (x.avgCost * x.quantity) || 0), 0));
-  const marketValue = Number(summary.totalMarketValue ?? items.reduce((sum, x) => sum + Number(x.marketValue || 0), 0));
-  const dailyPnl = Number(summary.dailyPnl ?? items.reduce((sum, x) => sum + Number(x.dailyPnl || 0), 0));
-  const previousMarketValue = Number(summary.previousMarketValue ?? items.reduce((sum, x) => sum + Number(x.previousClose || 0) * Number(x.quantity || 0), 0));
-  const dailyRate = Number(summary.dailyPnlPercent ?? (previousMarketValue ? dailyPnl / previousMarketValue * 100 : 0));
-  const unrealizedPnl = Number(summary.unrealizedPnl ?? items.reduce((sum, x) => sum + Number(x.unrealizedPnl || 0), 0));
-  const unrealizedRate = Number(summary.unrealizedRate ?? (totalCost ? unrealizedPnl / totalCost * 100 : 0));
-  const realizedPnl = Number(summary.realizedPnl ?? items.reduce((sum, x) => sum + Number(x.realizedPnl || 0), 0));
-  const totalReturn = Number(summary.totalReturn ?? items.reduce((sum, x) => sum + Number(x.totalReturn || 0), 0));
+  // 後端「無資料」是空字串，Number('') 是 0——用 ?? 只擋 null/undefined，擋不住 ''，
+  // 會讓有 summary 物件但欄位空白的情況把「加總 items」的 fallback 短路成 0（見 isBlankValue 上方註解）。
+  const totalCost = !isBlankValue(summary.totalCost) ? Number(summary.totalCost) : items.reduce((sum, x) => sum + Number(x.totalCost || (x.avgCost * x.quantity) || 0), 0);
+  const marketValue = !isBlankValue(summary.totalMarketValue) ? Number(summary.totalMarketValue) : items.reduce((sum, x) => sum + Number(x.marketValue || 0), 0);
+  const dailyPnl = !isBlankValue(summary.dailyPnl) ? Number(summary.dailyPnl) : items.reduce((sum, x) => sum + Number(x.dailyPnl || 0), 0);
+  const previousMarketValue = !isBlankValue(summary.previousMarketValue) ? Number(summary.previousMarketValue) : items.reduce((sum, x) => sum + Number(x.previousClose || 0) * Number(x.quantity || 0), 0);
+  const dailyRate = !isBlankValue(summary.dailyPnlPercent) ? Number(summary.dailyPnlPercent) : (previousMarketValue ? dailyPnl / previousMarketValue * 100 : 0);
+  const unrealizedPnl = !isBlankValue(summary.unrealizedPnl) ? Number(summary.unrealizedPnl) : items.reduce((sum, x) => sum + Number(x.unrealizedPnl || 0), 0);
+  const unrealizedRate = !isBlankValue(summary.unrealizedRate) ? Number(summary.unrealizedRate) : (totalCost ? unrealizedPnl / totalCost * 100 : 0);
+  const realizedPnl = !isBlankValue(summary.realizedPnl) ? Number(summary.realizedPnl) : items.reduce((sum, x) => sum + Number(x.realizedPnl || 0), 0);
+  const totalReturn = !isBlankValue(summary.totalReturn) ? Number(summary.totalReturn) : items.reduce((sum, x) => sum + Number(x.totalReturn || 0), 0);
   const dataProblems = Array.isArray(data.dataProblems) ? data.dataProblems : [];
   if (dataProblems.length) {
     // 交易重放時被跳過或夾住的列。庫存照樣算得出來，但使用者必須知道哪一筆要修。
@@ -1913,7 +2048,7 @@ function renderPortfolioData(data) {
         <td data-label="市值">${dashIfBlank(money(item.marketValue))}</td>
         <td data-label="未實現損益" class="${pnlCls}">${dashIfBlank(money(item.unrealizedPnl))}</td>
         <td data-label="累積報酬率" class="${pnlCls}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
-        <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText)}`)}</td>
+        <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
         <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-trade-modal" data-trade-action="BUY" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">買</button><button type="button" data-action="open-trade-modal" data-trade-action="SELL" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">賣</button><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol)}">線圖</button></div></td>
       </tr>
     `;
@@ -1946,28 +2081,39 @@ async function loadAnalysis(symbol, forceRefresh = false) {
   }
 
   const analysisRequestKey = symbol + (forceRefresh ? ":force" : ":cached");
-  let request = analysisRequests.get(analysisRequestKey);
-  if (!request) {
+  let entry = analysisRequests.get(analysisRequestKey);
+  if (!entry) {
+    // 新啟動一個真正打後端的請求：分配新的世代編號。同一個 key 被重用（去重）時
+    // 沿用建立當下的世代，不會因為之後又有 caller 呼叫 loadAnalysis 而被視為更舊。
+    const generation = (analysisFetchGeneration.get(symbol) || 0) + 1;
+    analysisFetchGeneration.set(symbol, generation);
     document.getElementById("mainChart").innerHTML = `<text x="40" y="80" fill="#94a3b8">線圖載入中...</text>`;
-    request = Api.getAnalysis(symbol, forceRefresh)
+    const promise = Api.getAnalysis(symbol, forceRefresh)
       .then(data => {
-        analysisMemoryCache.set(symbol, data);
-        pageDataCache.analysis[symbol] = data;
+        // 只有仍是該股票「最新」的請求才可以寫入記憶快取；較慢回來的舊世代
+        // （例如被 force 請求超車的 cached 請求）直接丟棄結果，避免用舊資料蓋新資料。
+        if (analysisFetchGeneration.get(symbol) === generation) {
+          analysisMemoryCache.set(symbol, data);
+          pageDataCache.analysis[symbol] = data;
+        }
         return data;
       })
       .finally(() => {
         analysisRequests.delete(analysisRequestKey);
       });
-    analysisRequests.set(analysisRequestKey, request);
+    entry = { promise, generation };
+    analysisRequests.set(analysisRequestKey, entry);
   }
 
   try {
-    const data = await request;
+    const data = await entry.promise;
     if (activeAnalysisSymbol !== symbol) return;
+    if (analysisFetchGeneration.get(symbol) !== entry.generation) return;
     renderAnalysis(data, symbol);
     setApiStatus("API 已連線");
   } catch (err) {
     if (activeAnalysisSymbol !== symbol) return;
+    if (analysisFetchGeneration.get(symbol) !== entry.generation) return;
     renderAnalysis(Mock.analysis, symbol);
     setApiStatus(err.message);
   }
@@ -2523,7 +2669,11 @@ function bindMainChartHover(svg, tooltip, points, config) {
   svg.onpointerleave = hide;
 }
 
-function sparkline(values, color = "#22c55e", width = 150, height = 36) {
+// 台股慣例（漲紅跌綠）：漲跌相關圖表線色統一由此處管理，避免各處各自硬編碼互相矛盾。
+const CHART_COLOR_UP = "#ef4444";
+const CHART_COLOR_DOWN = "#22c55e";
+
+function sparkline(values, color = CHART_COLOR_UP, width = 150, height = 36) {
   const arr = values.map(chartPriceValue).filter(v => v !== null);
   if (!arr.length) return "";
   const min = Math.min(...arr);
@@ -2578,8 +2728,10 @@ function formatLocalDate(date) {
 
 function getBadgeClass(text) {
   if (!text) return "";
+  // 台股慣例（漲紅跌綠）：多頭/偏多=紅(bull)、空頭/偏弱=綠(danger 沿用既有 class 名稱，但改為綠色)、中性=黃(warn)。
   if (text.includes("偏弱") || text.includes("偏空") || text.includes("空頭") || text.includes("風險")) return "danger";
   if (text.includes("盤整") || text.includes("中性") || text.includes("過熱") || text.includes("觀察")) return "warn";
+  if (text.includes("多頭") || text.includes("偏多") || text.includes("強勢")) return "bull";
   return "";
 }
 
@@ -2771,12 +2923,16 @@ function renderNotifications(data) {
 
 async function clearV11Notifications() {
   if (!Api.clearNotifications) return;
-  await Api.clearNotifications();
-  pageDataCache.notifications = { ok: true, items: [], unreadCount: 0 };
-  notificationCacheLoadedAt = Date.now();
-  paginationState.notifications.offset = 0;
-  updateNotificationBadge(0);
-  renderNotifications({ items: [], unreadCount: 0 });
+  try {
+    await Api.clearNotifications();
+    pageDataCache.notifications = { ok: true, items: [], unreadCount: 0 };
+    notificationCacheLoadedAt = Date.now();
+    paginationState.notifications.offset = 0;
+    updateNotificationBadge(0);
+    renderNotifications({ items: [], unreadCount: 0 });
+  } catch (err) {
+    showToast("清除通知失敗：" + err.message, "error");
+  }
 }
 
 function openNotificationSheet() {
@@ -3066,7 +3222,7 @@ function openSparklineStats(symbol) {
     <div><span>最低</span><strong>${number(stats.low)}</strong></div>
     <div><span>漲跌</span><strong class="${stats.changePercent >= 0 ? "up" : "down"}">${signedNumber(stats.changePercent)}%</strong></div>
     <div><span>波動</span><strong>${number(stats.rangePercent)}%</strong></div>
-  </div>${sparkline((item && item.sparkline) || [], stats.changePercent >= 0 ? "#22c55e" : "#ef4444", 520, 110)}`;
+  </div>${sparkline((item && item.sparkline) || [], stats.changePercent >= 0 ? CHART_COLOR_UP : CHART_COLOR_DOWN, 520, 110)}`;
   openDashboardDetailSheet(title, body);
 }
 

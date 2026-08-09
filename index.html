@@ -13,7 +13,7 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.15" />
+  <link rel="stylesheet" href="css/style.css?v=11.17" />
   <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -72,7 +72,27 @@
             <div>
               <h2>我的關注股票</h2>
             </div>
-            <button id="btnToggleWatchForm">＋ 新增關注股票</button>
+            <div class="watch-actions">
+              <button id="btnToggleWatchForm" class="icon-btn" type="button" title="新增關注股票" aria-label="新增關注股票">＋</button>
+              <button id="btnWatchColumns" class="icon-btn" type="button" title="變更欄位" aria-label="變更欄位">✏️</button>
+              <div id="watchColumnMenu" class="column-menu" hidden role="dialog" aria-label="選擇欄位"></div>
+            </div>
+            <label class="candidate-sort watch-mobile-sort" for="watchlistMobileSort">排序
+              <select id="watchlistMobileSort">
+                <option value="symbol">股票代號</option>
+                <option value="changePercent">漲跌幅</option>
+                <option value="totalScore">技術分數</option>
+                <option value="trendText">狀態</option>
+                <option value="rsi14">RSI</option>
+                <option value="adx14">ADX</option>
+                <option value="atrPercent">ATR%</option>
+                <option value="volumeRatio">量比</option>
+                <option value="foreignNet">外資</option>
+                <option value="trustNet">投信</option>
+                <option value="dealerNet">自營商</option>
+                <option value="signalSummary">訊號</option>
+              </select>
+            </label>
           </div>
 
           <form id="watchlistForm" class="watch-form hidden">
@@ -99,15 +119,18 @@
               <thead>
                 <tr>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="symbol">股票</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="changePercent">漲跌幅</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="adx14">ADX</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="atrPercent">ATR%</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
-                  <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="signalSummary">訊號</button></th>
-                  <th>迷你線圖</th>
+                  <th aria-sort="none" data-col="changePercent"><button class="table-sort-button" type="button" data-watch-sort="changePercent">漲跌幅</button></th>
+                  <th aria-sort="none" data-col="totalScore"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
+                  <th aria-sort="none" data-col="trendText"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
+                  <th aria-sort="none" data-col="rsi14"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
+                  <th aria-sort="none" data-col="adx14"><button class="table-sort-button" type="button" data-watch-sort="adx14">ADX</button></th>
+                  <th aria-sort="none" data-col="atrPercent"><button class="table-sort-button" type="button" data-watch-sort="atrPercent">ATR%</button></th>
+                  <th aria-sort="none" data-col="volumeRatio"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
+                  <th aria-sort="none" data-col="foreignNet"><button class="table-sort-button" type="button" data-watch-sort="foreignNet">外資</button></th>
+                  <th aria-sort="none" data-col="trustNet"><button class="table-sort-button" type="button" data-watch-sort="trustNet">投信</button></th>
+                  <th aria-sort="none" data-col="dealerNet"><button class="table-sort-button" type="button" data-watch-sort="dealerNet">自營商</button></th>
+                  <th aria-sort="none" data-col="signalSummary"><button class="table-sort-button" type="button" data-watch-sort="signalSummary">訊號</button></th>
+                  <th data-col="sparkline">迷你線圖</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -410,9 +433,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script defer src="js/config.js?v=11.15"></script>
-  <script defer src="js/api.js?v=11.15"></script>
-  <script defer src="js/indicator-explain.js?v=11.15"></script>
-  <script defer src="js/app.js?v=11.15"></script>
+  <script defer src="js/config.js?v=11.17"></script>
+  <script defer src="js/api.js?v=11.17"></script>
+  <script defer src="js/indicator-explain.js?v=11.17"></script>
+  <script defer src="js/app.js?v=11.17"></script>
 </body>
 </html>
