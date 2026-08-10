@@ -843,9 +843,7 @@ async function startBackgroundBackfill(symbols) {
   try {
     await Api.backfillHistoricalPrices(12, list.join(","));
     invalidateFrontendQuoteCaches();
-    pageDataCache.dashboard = null;
-    clearCache(CACHE_KEYS.dashboard);
-    await loadDashboard({ force: false });
+    await refreshDashboardSeamless_();
     setApiStatus(`歷史資料回補完成（${label}）`);
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
@@ -936,11 +934,9 @@ async function onSubmitWatchlist(event) {
       // 先用前端快取即時重繪：清單完整、新列先顯示佔位，不清空、不需手動重整。
       if (currentCache) renderDashboard(currentCache);
       setApiStatus("API 已連線");
-      // 再「背景」非阻塞刷新首頁，把新列的技術數值與候選慢慢補上。用非 force（＝手動重整那條有效路徑，
-      // 走惰性重建），避免 force 重建偶爾回空；不 await，失敗也不影響已加入的清單。
-      pageDataCache.dashboard = null;
-      clearCache(CACHE_KEYS.dashboard);
-      loadDashboard().catch(() => {});
+      // 再「背景」非阻塞刷新首頁，把新列的技術數值與候選慢慢補上。無縫刷新（保留清單當底稿、不清成
+      // 骨架），用非 force（＝手動重整那條有效路徑、走惰性重建），避免 force 重建偶爾回空；不 await。
+      refreshDashboardSeamless_().catch(() => {});
     }
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
@@ -1111,10 +1107,8 @@ async function onDocumentClick(event) {
     setApiStatus("正在移除關注股票...");
     await Api.removeWatchlist(symbol, name);
     setApiStatus("已移除關注股票");
-    // 已樂觀移除、清單即時更新。背景非強制刷新（不 await、不阻塞）補上候選/市場，失敗不影響。
-    pageDataCache.dashboard = null;
-    clearCache(CACHE_KEYS.dashboard);
-    loadDashboard().catch(() => {});
+    // 已樂觀移除、清單即時更新。無縫背景刷新（保留清單當底稿、不清成骨架，不 await）補上候選/市場。
+    refreshDashboardSeamless_().catch(() => {});
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
     if (previousItem) upsertCachedWatchlistItem(previousItem);
@@ -1254,6 +1248,16 @@ function changePage(pageName, options = {}) {
 
 let dashboardRetryTimer = null;
 let dashboardRetryCount = 0;
+
+// 加入/移除/背景回補完成後，用來「無縫」刷新首頁：保留現有快取當底稿（不清成 null，否則 loadDashboard
+// 找不到快取會改 show 載入骨架，看起來像整頁重載/閃爍），只清掉新鮮度標記逼它向後端抓一次；
+// loadDashboard 會先畫既有清單、抓到新資料再原地換上，清單全程留在畫面，不再有「加完就整頁重載」的感覺。
+function refreshDashboardSeamless_() {
+  const current = getCachedDashboard();
+  if (current) pageDataCache.dashboard = current;
+  delete pageDataFetchedAt.dashboard;
+  return loadDashboard();
+}
 
 async function loadDashboard(options = {}) {
   const cached = pageDataCache.dashboard || getCachedDashboard();
