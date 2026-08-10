@@ -889,14 +889,24 @@ async function onSubmitWatchlist(event) {
     message.textContent = resultMessage;
     form.reset();
     form.querySelector("input[name='backfill']").checked = false;
-    // 後端加入時已同步重建過 dashboard（result.cache.dashboard），直接拿來渲染，
-    // 不必再多發一次 force 重建（那是加關注最貴、最慢的第二次冷啟動）。缺才退回強制重載。
+    // 新增本身已成功、列已在前端快取（樂觀新增 + replaceCachedWatchlistItem）。儀表板刷新是次要，
+    // 絕不可因 inline 儀表板為空、或刷新失敗，而把整個清單清空。
+    // 後端 inline 儀表板（result.cache.dashboard）在衍生快取冷重建回空時，watchlist 可能是空陣列——
+    // 只有當它「非空且不少於目前清單」才採用；否則改用前端已知正確的快取（含既有 + 剛加入）重繪。
     const inlineDashboard = result.cache && result.cache.dashboard;
-    if (inlineDashboard && Array.isArray(inlineDashboard.watchlist)) {
+    const currentCache = getCachedDashboard();
+    const currentCount = currentCache && Array.isArray(currentCache.watchlist) ? currentCache.watchlist.length : 0;
+    const inlineUsable = inlineDashboard && Array.isArray(inlineDashboard.watchlist)
+      && inlineDashboard.watchlist.length > 0 && inlineDashboard.watchlist.length >= currentCount;
+    if (inlineUsable) {
       pageDataCache.dashboard = inlineDashboard;
       markPageDataFetched_("dashboard");
       saveDashboardCache(inlineDashboard);
       renderDashboard(inlineDashboard);
+      setApiStatus("API 已連線");
+    } else if (currentCache) {
+      // inline 缺/空：用前端快取重繪，清單保持完整（新加入的列先顯示「觀察」，市場資料於下次載入補上）。
+      renderDashboard(currentCache);
       setApiStatus("API 已連線");
     } else {
       pageDataCache.dashboard = null;

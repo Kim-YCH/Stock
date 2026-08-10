@@ -10,16 +10,16 @@
 //
 // 發版檢查清單：改版時把 CACHE_VERSION 一起 bump（與 APP_VERSION 對齊），
 // 讓 activate 清掉舊快取、避免卡舊殼層。
-const CACHE_VERSION = "v11.17.1";
+const CACHE_VERSION = "v11.17.2";
 const CACHE_NAME = "stocklab-shell-" + CACHE_VERSION;
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=11.17.1",
-  "./js/config.js?v=11.17.1",
-  "./js/api.js?v=11.17.1",
-  "./js/indicator-explain.js?v=11.17.1",
-  "./js/app.js?v=11.17.1",
+  "./css/style.css?v=11.17.2",
+  "./js/config.js?v=11.17.2",
+  "./js/api.js?v=11.17.2",
+  "./js/indicator-explain.js?v=11.17.2",
+  "./js/app.js?v=11.17.2",
   "./icons/favicon.svg",
   "./manifest.json"
 ];
