@@ -832,6 +832,27 @@ function toggleWatchForm(forceOpen) {
   }
 }
 
+// 背景歷史回補：加入新股（勾了自動回補、且共享庫沒有）時，後端秒回、只標記待回補；這裡在背景
+// 另發爬取請求（有自己完整的 GAS 6 分鐘預算，不會拖垮加入本身），完成後清快取並非強制重載，
+// 把剛補上的價格/指標顯示到那幾列——不再讓加入卡數分鐘、也不需手動重整。
+async function startBackgroundBackfill(symbols) {
+  const list = (symbols || []).filter(Boolean);
+  if (!list.length) return;
+  const label = list.join("、");
+  setApiStatus(`歷史資料背景回補中（${label}），約 1-3 分鐘，完成後自動更新，不必手動重整...`);
+  try {
+    await Api.backfillHistoricalPrices(12, list.join(","));
+    invalidateFrontendQuoteCaches();
+    pageDataCache.dashboard = null;
+    clearCache(CACHE_KEYS.dashboard);
+    await loadDashboard({ force: false });
+    setApiStatus(`歷史資料回補完成（${label}）`);
+  } catch (err) {
+    const msg = err && err.message ? err.message : String(err);
+    setApiStatus(`歷史資料回補未完成（${label}）：${msg}，可稍後手動重整`);
+  }
+}
+
 async function onSubmitWatchlist(event) {
   event.preventDefault();
 
@@ -867,14 +888,21 @@ async function onSubmitWatchlist(event) {
   try {
     const result = await Api.addWatchlist(payload);
     if (payload.backfill === "true") invalidateFrontendQuoteCaches();
+    // 待背景回補歷史的新股：後端秒回、不同步爬取（見 addWatchlistBatch_）。這幾檔先標「資料回補中」，
+    // 由 startBackgroundBackfill 在背景另發爬取請求，完成後自動刷新——不再讓加入卡數分鐘、也不需手動重整。
+    const pendingBackfill = (result.backfillPending && Array.isArray(result.backfillPendingSymbols))
+      ? result.backfillPendingSymbols.filter(Boolean) : [];
+    const pendingSet = new Set(pendingBackfill.map(normalizeSymbolInput));
     (result.stocks || []).forEach(stock => {
+      const isPending = pendingSet.has(normalizeSymbolInput(stock.symbol));
       replaceCachedWatchlistItem(stock.symbol, {
         symbol: stock.symbol,
         name: stock.name || "",
-        trendText: "觀察",
-        signalSummary: ""
+        trendText: isPending ? "資料回補中" : "觀察",
+        signalSummary: isPending ? "歷史資料背景回補中，完成後自動更新" : ""
       });
     });
+    if (pendingBackfill.length) startBackgroundBackfill(pendingBackfill);
     let resultMessage = result.warning
       ? `${result.message || "已加入關注股票"}：${result.warning}`
       : (result.message || "已加入關注股票");
@@ -1245,7 +1273,10 @@ async function loadDashboard(options = {}) {
   try {
     const data = await Api.getDashboard(options.force === true);
     if (data.cacheMiss || data.rebuilding) {
-      const displayData = data.cacheMiss && cached ? cached : data;
+      // 後端快取重建中（cacheMiss 或 rebuilding）：優先沿用既有快取繼續顯示，別用「重建中的空 payload」
+      // 蓋掉畫面上的清單——那正是「加完股票一重整、首頁資料整個消失、要等重試才回來」的元兇。
+      // 沒有任何快取可用時才退而顯示後端回的 data（通常是重建中訊息/骨架）。
+      const displayData = cached || data;
       if (displayData) renderDashboard(displayData);
       // 後端已經放棄重試就別再空轉，把真正的錯誤顯示出來讓使用者能處理。
       if (data.rebuildGaveUp) {
