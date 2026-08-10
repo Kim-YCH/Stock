@@ -1083,9 +1083,10 @@ async function onDocumentClick(event) {
     setApiStatus("正在移除關注股票...");
     await Api.removeWatchlist(symbol, name);
     setApiStatus("已移除關注股票");
+    // 已樂觀移除、清單即時更新。背景非強制刷新（不 await、不阻塞）補上候選/市場，失敗不影響。
     pageDataCache.dashboard = null;
     clearCache(CACHE_KEYS.dashboard);
-    await loadDashboard();
+    loadDashboard().catch(() => {});
   } catch (err) {
     setApiStatus("移除失敗：" + err.message);
     if (previousItem) upsertCachedWatchlistItem(previousItem);
