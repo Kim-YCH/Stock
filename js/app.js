@@ -904,14 +904,15 @@ async function onSubmitWatchlist(event) {
       saveDashboardCache(inlineDashboard);
       renderDashboard(inlineDashboard);
       setApiStatus("API 已連線");
-    } else if (currentCache) {
-      // inline 缺/空：用前端快取重繪，清單保持完整（新加入的列先顯示「觀察」，市場資料於下次載入補上）。
-      renderDashboard(currentCache);
-      setApiStatus("API 已連線");
     } else {
+      // 先用前端快取即時重繪：清單完整、新列先顯示佔位，不清空、不需手動重整。
+      if (currentCache) renderDashboard(currentCache);
+      setApiStatus("API 已連線");
+      // 再「背景」非阻塞刷新首頁，把新列的技術數值與候選慢慢補上。用非 force（＝手動重整那條有效路徑，
+      // 走惰性重建），避免 force 重建偶爾回空；不 await，失敗也不影響已加入的清單。
       pageDataCache.dashboard = null;
       clearCache(CACHE_KEYS.dashboard);
-      await loadDashboard({ force: true });
+      loadDashboard().catch(() => {});
     }
   } catch (err) {
     message.textContent = "加入失敗：" + err.message;
