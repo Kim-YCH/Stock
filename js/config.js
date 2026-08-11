@@ -1,4 +1,4 @@
-const API_BASE_URL = "https://script.google.com/macros/s/AKfycbxBvoIxhRW_QDlsstsGqNPDrDEluUHHZhoTVaJ3m6WhsiGws6uFrTHG5jdaU7diaQQo/exec"
+const API_BASE_URL = "https://script.google.com/macros/s/AKfycbwupKvXOIMo0VxOcuBN4ngFeGZFUjTCsr6G9jk080D-ZuCKEsWtbrQ669EtMAOqVXxJ/exec"
 // Release checklist: keep APP_VERSION and every index.html ?v= cache key in sync.
 const APP_VERSION = "v11.17";
 // 由 Google Cloud Console 建立的 OAuth 2.0 Web Client ID（非機密，可公開）。
