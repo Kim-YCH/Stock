@@ -1293,6 +1293,19 @@ async function loadDashboard(options = {}) {
       return;
     }
 
+    // 守衛：抓回來的 watchlist 是空的、但快取／畫面上明明有股票 → 幾乎必是「加/移除後衍生快取重建中」的
+    // 瞬間空狀態（後端偶爾回 ok + 空清單、卻未帶 rebuilding 旗標；股票多、重建久的帳號才露得出來）。此時
+    // 維持顯示既有清單並排重試，絕不用空清單蓋掉——這就是「加股票後清單先全部消失、最後才出來」的來源。
+    // 重試數次仍空才採信（可能真的在別的裝置把關注清空了），避免永遠卡在舊清單。
+    const fetchedWatch = Array.isArray(data.watchlist) ? data.watchlist.length : 0;
+    const cachedWatch = cached && Array.isArray(cached.watchlist) ? cached.watchlist.length : 0;
+    if (fetchedWatch === 0 && cachedWatch > 0 && dashboardRetryCount < 4) {
+      renderDashboard(cached);
+      setApiStatus("首頁資料更新中...");
+      scheduleDashboardRetry(6);
+      return;
+    }
+
     clearDashboardRetry();
     pageDataCache.dashboard = data;
     markPageDataFetched_("dashboard");
