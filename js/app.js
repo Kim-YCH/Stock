@@ -295,8 +295,7 @@ async function onAdminAddSubmit(e) {
 function initApp() {
   cleanupLocalCaches();
   setAppVersionLabel();
-  // 後端版本改由 dashboard payload 的 data.version 帶回（renderDashboard 設定），
-  // 不再於啟動時多發一支獨立的 version JSONP（那是一次多餘的冷啟動）。
+  refreshRuntimeBackendVersion_();
   detectDeviceMode();
   window.addEventListener("resize", detectDeviceMode);
 
@@ -948,6 +947,18 @@ function setBackendVersionLabel(version) {
   el.title = matches
     ? "前後端版本一致"
     : "前端為 " + frontendVersion + "，目前 Web App 後端為 " + backendVersion;
+}
+
+async function refreshRuntimeBackendVersion_() {
+  try {
+    const data = await Api.getBackendVersion();
+    const version = String((data && data.version) || "").trim();
+    if (!version) return;
+    runtimeBackendVersion = version;
+    setBackendVersionLabel(version);
+  } catch (err) {
+    // Dashboard payload remains the fallback when the lightweight endpoint is unavailable.
+  }
 }
 
 function getCachedDashboard() {
