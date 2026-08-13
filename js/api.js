@@ -115,21 +115,22 @@ const Api = (() => {
    * silentReauth 靜默取得新的 Google ID token 換一個新 session，然後
    * **只重試一次**——第二次仍失敗，或沒有 silentReauth 可用，就往外丟。
    */
-  async function jsonp(action, params = {}) {
+  async function jsonp(action, params = {}, options = {}) {
     try {
-      return await jsonpRaw(action, params);
+      return await jsonpRaw(action, params, options);
     } catch (err) {
-      if (!err || err.code !== "AUTH" || !silentReauth) throw err;
+      if ((options.signal && options.signal.aborted) || !err || err.code !== "AUTH" || !silentReauth) throw err;
       try {
         await reauthAndLogin();                 // 並發 AUTH 共用同一次靜默重登 + 換 session
       } catch (reauthErr) {
         throw err;                              // 靜默重登失敗：往外丟原本的 AUTH 錯誤
       }
-      return jsonpRaw(action, params);          // 只重試一次
+      if (options.signal && options.signal.aborted) throw err;
+      return jsonpRaw(action, params, options); // 只重試一次
     }
   }
 
-  function jsonpRaw(action, params = {}) {
+  function jsonpRaw(action, params = {}, options = {}) {
     return new Promise((resolve, reject) => {
       if (!isConfigured()) {
         reject(new Error("尚未設定 API_BASE_URL，請先更新 js/config.js"));
@@ -155,6 +156,7 @@ const Api = (() => {
 
       const script = document.createElement("script");
       let callbackCalled = false;
+      let settled = false;
       // 後端 Apps Script 單次執行硬上限是 6 分鐘。前端逾時設在 350 秒（約 5.8 分），
       // 給重算類請求接近完整的後端預算，又不會在後端已死之後還空等。
       const timeout = setTimeout(() => {
@@ -162,13 +164,32 @@ const Api = (() => {
         reject(new Error("API 逾時"));
       }, 350000);
 
+      let abortListener = null;
       function cleanup() {
         clearTimeout(timeout);
+        if (options.signal && abortListener) options.signal.removeEventListener("abort", abortListener);
         delete window[callbackName];
         if (script.parentNode) script.parentNode.removeChild(script);
       }
 
+      function abort() {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const err = new Error("Dashboard status request cancelled");
+        err.code = "ABORTED";
+        reject(err);
+      }
+
+      if (options.signal) {
+        if (options.signal.aborted) { abort(); return; }
+        abortListener = abort;
+        options.signal.addEventListener("abort", abortListener, { once: true });
+      }
+
       window[callbackName] = (data) => {
+        if (settled) return;
+        settled = true;
         callbackCalled = true;
         cleanup();
         if (data && data.ok === false) {
@@ -189,12 +210,16 @@ const Api = (() => {
       };
 
       script.onerror = () => {
+        if (settled) return;
+        settled = true;
         cleanup();
         reject(new Error("API 載入失敗"));
       };
       script.onload = () => {
         setTimeout(() => {
           if (callbackCalled) return;
+          if (settled) return;
+          settled = true;
           cleanup();
           reject(new Error("API 已載入，但後端沒有執行 JSONP callback"));
         }, 0);
@@ -215,6 +240,7 @@ const Api = (() => {
     setSilentReauth,
     getBackendVersion: () => getOnce("version"),
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
+    getDashboardStatus: (options = {}) => jsonp("dashboard", {}, options),
     getCandidates: () => getOnce("candidates"),
     getMarketSummary: () => getOnce("marketSummary"),
     getNotifications: (params = {}) => getOnce("notifications", params),
@@ -232,7 +258,7 @@ const Api = (() => {
     updateDailyPrices: () => jsonp("updateDailyPrices"),
     runDerivedNow: () => jsonp("runDerivedNow"),
     scheduleDerivedRebuild: () => jsonp("scheduleDerivedRebuild"),
-    backfillHistoricalPrices: (months = 12, symbols = "") => jsonp("backfillHistoricalPrices", { months, symbols }),
+    backfillHistoricalPrices: (months = 12, symbols = "", scope = "") => jsonp("backfillHistoricalPrices", { months, symbols, scope }),
     addTransaction: (data) => jsonp("addTransaction", data),
     deleteTransaction: (id) => jsonp("deleteTransaction", { id }),
     listUsers: () => jsonp("listUsers"),

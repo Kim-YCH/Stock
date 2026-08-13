@@ -422,30 +422,221 @@ function sleep_(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchDashboardState_() {
-  try {
-    return (await Api.getDashboard(false)) || {};
-  } catch (err) {
-    return {};
+const INDICATOR_JOB_POLL_MS = 15000;
+let indicatorJobPollPromise_ = null;
+let indicatorJobPollTimer_ = null;
+let indicatorJobPollController_ = null;
+let indicatorJobPollDeadlineTimer_ = null;
+let indicatorJobPollEpoch_ = 0;
+let indicatorJobScheduleEpoch_ = 0;
+
+function indicatorJobFrom_(value) {
+  if (!value || typeof value !== "object") return null;
+  if (value.lastRun && value.lastRun.indicatorJob) return value.lastRun.indicatorJob;
+  if (value.indicatorJob) return value.indicatorJob;
+  return value.jobId || value.generation || value.status ? value : null;
+}
+
+function isTerminalIndicatorJob_(job) {
+  if (!job) return false;
+  return job.status === "done" || job.status === "error" || job.status === "cancelled" ||
+    (job.status === "partial" && Boolean(job.pipelineFinishedAt));
+}
+
+function indicatorJobProgressText_(job) {
+  const priorityCompleted = Number(job && job.priorityCompleted) || 0;
+  const priorityTotal = Number(job && job.priorityTotal) || 0;
+  const remainingCompleted = Number(job && job.remainingCompleted) || 0;
+  const remainingTotal = Number(job && job.remainingTotal) || 0;
+  const phase = String((job && (job.phase || job.status)) || "waiting");
+  return `Indicator rebuild: ${phase} (${priorityCompleted + remainingCompleted}/${priorityTotal + remainingTotal})`;
+}
+
+function indicatorJobNumber_(job, field) {
+  const value = Number(job && job[field]);
+  return Number.isFinite(value) ? value : null;
+}
+
+function indicatorJobTimestampAfter_(left, right) {
+  const leftValue = String((left && left.updatedAt) || "");
+  const rightValue = String((right && right.updatedAt) || "");
+  return Boolean(leftValue && rightValue && leftValue > rightValue);
+}
+
+function indicatorJobGenerationOrder_(job) {
+  const jobId = String((job && job.jobId) || "");
+  const generation = String((job && job.generation) || "");
+  const prefix = jobId + ":";
+  if (!jobId || !generation.startsWith(prefix)) return null;
+  const match = generation.slice(prefix.length).match(/^([0-9]+):([a-z0-9]+)$/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function isAuthoritativeIndicatorJob_(candidate, baseline) {
+  if (!candidate) return false;
+  if (!baseline) return true;
+  const sameIdentity = String(candidate.jobId || "") === String(baseline.jobId || "") &&
+    String(candidate.generation || "") === String(baseline.generation || "");
+  const candidateRevision = indicatorJobNumber_(candidate, "revision");
+  const baselineRevision = indicatorJobNumber_(baseline, "revision");
+  if (sameIdentity) {
+    if (candidateRevision !== null && baselineRevision !== null) {
+      if (candidateRevision !== baselineRevision) return candidateRevision > baselineRevision;
+      return !indicatorJobTimestampAfter_(baseline, candidate);
+    }
+    return !indicatorJobTimestampAfter_(baseline, candidate);
   }
+  const candidateDate = String(candidate.dataDate || "");
+  const baselineDate = String(baseline.dataDate || "");
+  if (candidateDate && baselineDate && candidateDate !== baselineDate) return candidateDate > baselineDate;
+  if (candidateDate !== baselineDate) return false;
+  const candidateGenerationOrder = indicatorJobGenerationOrder_(candidate);
+  const baselineGenerationOrder = indicatorJobGenerationOrder_(baseline);
+  return candidateGenerationOrder !== null && baselineGenerationOrder !== null &&
+    candidateGenerationOrder > baselineGenerationOrder;
+}
+
+function isCurrentIndicatorJobPoll_(controller) {
+  return Boolean(controller && !controller.settled && controller === indicatorJobPollController_ &&
+    controller.epoch === indicatorJobPollEpoch_);
+}
+
+function isDashboardRouteActive_() {
+  const hash = String((window.location && window.location.hash) || "").replace(/^#/, "");
+  return !hash || resolvePageName(hash) === "dashboard";
+}
+
+function clearIndicatorJobPollTimer_(controller) {
+  if (!controller || controller.pollTimer === null) return;
+  clearTimeout(controller.pollTimer);
+  if (indicatorJobPollTimer_ === controller.pollTimer) indicatorJobPollTimer_ = null;
+  controller.pollTimer = null;
+}
+
+function clearIndicatorJobDeadlineTimer_(controller) {
+  if (!controller || controller.deadlineTimer === null) return;
+  clearTimeout(controller.deadlineTimer);
+  if (indicatorJobPollDeadlineTimer_ === controller.deadlineTimer) indicatorJobPollDeadlineTimer_ = null;
+  controller.deadlineTimer = null;
+}
+
+function finishIndicatorJobPoll_(controller, result) {
+  if (!controller || controller.settled) return;
+  controller.settled = true;
+  if (controller.abortController) controller.abortController.abort();
+  clearIndicatorJobPollTimer_(controller);
+  clearIndicatorJobDeadlineTimer_(controller);
+  if (indicatorJobPollController_ === controller) {
+    indicatorJobPollController_ = null;
+    indicatorJobPollPromise_ = null;
+  }
+  controller.resolve(result);
+}
+
+function stoppedIndicatorJobResult_(controller, status) {
+  return Object.assign({}, controller.currentJob || controller.baseline || {}, { status });
+}
+
+function scheduleIndicatorJobPoll_(controller) {
+  if (!isCurrentIndicatorJobPoll_(controller)) return;
+  if (Date.now() >= controller.deadline) {
+    finishIndicatorJobPoll_(controller, stoppedIndicatorJobResult_(controller, "timeout"));
+    return;
+  }
+  clearIndicatorJobPollTimer_(controller);
+  controller.pollTimer = setTimeout(() => pollIndicatorJob_(controller), INDICATOR_JOB_POLL_MS);
+  indicatorJobPollTimer_ = controller.pollTimer;
+}
+
+async function pollIndicatorJob_(controller) {
+  if (!isCurrentIndicatorJobPoll_(controller) || controller.inFlight) return;
+  if (Date.now() >= controller.deadline) {
+    finishIndicatorJobPoll_(controller, stoppedIndicatorJobResult_(controller, "timeout"));
+    return;
+  }
+  controller.inFlight = true;
+  let dashboard = null;
+  try {
+    dashboard = Api.getDashboardStatus
+      ? await Api.getDashboardStatus({ signal: controller.abortController && controller.abortController.signal })
+      : await Api.getDashboard(false);
+  } catch (err) {
+    // A transient Dashboard failure is retried by the same poller after the normal delay.
+  } finally {
+    controller.inFlight = false;
+  }
+
+  if (!isCurrentIndicatorJobPoll_(controller)) {
+    if (indicatorJobPollController_) pollIndicatorJob_(indicatorJobPollController_);
+    return;
+  }
+
+  const currentJob = indicatorJobFrom_(dashboard);
+  if (currentJob && isAuthoritativeIndicatorJob_(currentJob, controller.baseline)) {
+    // Only an equal-or-newer Dashboard job can replace the scheduled baseline.
+    controller.baseline = currentJob;
+    controller.currentJob = currentJob;
+    if (controller.onProgress) controller.onProgress(currentJob);
+    if (isTerminalIndicatorJob_(currentJob)) {
+      finishIndicatorJobPoll_(controller, currentJob);
+      return;
+    }
+  }
+  scheduleIndicatorJobPoll_(controller);
+}
+
+function cancelIndicatorJobPolling_() {
+  indicatorJobScheduleEpoch_++;
+  const controller = indicatorJobPollController_;
+  if (!controller) return;
+  finishIndicatorJobPoll_(controller, stoppedIndicatorJobResult_(controller, "cancelled"));
+}
+
+function waitForIndicatorJob_(baseline, maxMs, options) {
+  const opts = options || {};
+  const initialJob = indicatorJobFrom_(baseline);
+  const active = indicatorJobPollController_;
+  if (active && !active.settled) {
+    if (!opts.restart) return indicatorJobPollPromise_;
+    finishIndicatorJobPoll_(active, stoppedIndicatorJobResult_(active, "cancelled"));
+  }
+
+  const controller = {
+    epoch: ++indicatorJobPollEpoch_,
+    baseline: initialJob,
+    currentJob: initialJob,
+    deadline: Date.now() + maxMs,
+    onProgress: opts.onProgress || null,
+    inFlight: false,
+    settled: false,
+    resolve: null,
+    pollTimer: null,
+    deadlineTimer: null,
+    abortController: typeof AbortController !== "undefined" ? new AbortController() : null
+  };
+  indicatorJobPollController_ = controller;
+  indicatorJobPollPromise_ = new Promise(resolve => { controller.resolve = resolve; });
+  controller.deadlineTimer = setTimeout(() => {
+    if (isCurrentIndicatorJobPoll_(controller)) {
+      finishIndicatorJobPoll_(controller, stoppedIndicatorJobResult_(controller, "timeout"));
+    }
+  }, Math.max(0, maxMs));
+  indicatorJobPollDeadlineTimer_ = controller.deadlineTimer;
+  if (controller.onProgress && initialJob) controller.onProgress(initialJob);
+  pollIndicatorJob_(controller);
+  return indicatorJobPollPromise_;
+}
+
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("pagehide", cancelIndicatorJobPolling_);
 }
 
 /**
- * 輪詢 dashboard 的 updatedAt，等背景 Phase 2 重建快取後才算完成。
- * 只認「非 cacheMiss / 非 stale 且 updatedAt 前進」的狀態——cacheMiss 每次會回傳新的
- * now，直接比 updatedAt 會誤判成已完成。
+ * Poll Dashboard.lastRun.indicatorJob at a fixed cadence until a terminal backend job,
+ * local cancellation, or the independent workflow deadline settles the current epoch.
  */
-async function waitForDerivedRebuild_(baselineUpdatedAt, maxMs) {
-  const deadline = Date.now() + maxMs;
-  while (Date.now() < deadline) {
-    await sleep_(30000);
-    const d = await fetchDashboardState_();
-    const updatedAt = String((d && d.updatedAt) || "");
-    if (d && !d.cacheMiss && !d.stale && updatedAt && updatedAt !== baselineUpdatedAt) return true;
-  }
-  return false;
-}
-
 /**
  * 把技術指標與所有衍生快取排入背景重算，再輪詢直到完成。
  *
@@ -465,10 +656,11 @@ async function onRunDerivedNow() {
   setApiStatus("正在把技術指標與衍生快取排入背景重算");
 
   try {
-    const before = await fetchDashboardState_();
-    const baseline = (before && !before.cacheMiss) ? String(before.updatedAt || "") : "";
+    cancelIndicatorJobPolling_();
+    const scheduleEpoch = ++indicatorJobScheduleEpoch_;
 
     const result = await Api.scheduleDerivedRebuild();
+    if (scheduleEpoch !== indicatorJobScheduleEpoch_ || !isDashboardRouteActive_()) return;
     if (!result || result.ok === false) {
       throw new Error((result && result.message) || "無法排程背景重算");
     }
@@ -477,14 +669,25 @@ async function onRunDerivedNow() {
     setApiStatus("已排入背景重算，完成後會自動更新（通常 1–5 分鐘，可先離開此頁）");
     showToast("已排入背景重算，完成後自動更新", "info");
 
-    const done = await waitForDerivedRebuild_(baseline, 10 * 60 * 1000);
-    if (done) {
+    const terminalJob = await waitForIndicatorJob_(indicatorJobFrom_(result), 10 * 60 * 1000, {
+      restart: true,
+      onProgress: job => setApiStatus(indicatorJobProgressText_(job))
+    });
+    if (terminalJob && (terminalJob.status === "done" ||
+        (terminalJob.status === "partial" && terminalJob.pipelineFinishedAt))) {
       invalidateFrontendQuoteCaches();
       pageDataCache.dashboard = null;
       clearCache(CACHE_KEYS.dashboard);
       await loadDashboard({ force: false });
       setApiStatus("技術指標與衍生快取已重算完成");
       showToast("重算完成", "success");
+    } else if (terminalJob && terminalJob.status === "error") {
+      const errorText = "Indicator rebuild failed: " + String(terminalJob.error || "Unknown backend error");
+      setApiStatus(errorText);
+      showToast(errorText, "error");
+    } else if (terminalJob && terminalJob.status === "cancelled") {
+      setApiStatus("Indicator rebuild polling was cancelled.");
+      showToast("Indicator rebuild polling was cancelled.", "warning");
     } else {
       setApiStatus("背景重算仍在進行，請稍後重新整理頁面查看");
       showToast("重算尚未完成，稍後會自動就緒，可手動重整", "warning");
@@ -841,10 +1044,13 @@ async function startBackgroundBackfill(symbols) {
   const label = list.join("、");
   setApiStatus(`歷史資料背景回補中（${label}），約 1-3 分鐘，完成後自動更新，不必手動重整...`);
   try {
-    await Api.backfillHistoricalPrices(12, list.join(","));
+    const result = await Api.backfillHistoricalPrices(12, list.join(","), "watchlist");
     invalidateFrontendQuoteCaches();
     await refreshDashboardSeamless_();
-    setApiStatus(`歷史資料回補完成（${label}）`);
+    const warning = result && String(result.warning || "").trim();
+    setApiStatus(warning
+      ? `歷史資料回補完成，但部分更新延後（${label}）：${warning}`
+      : `歷史資料回補完成（${label}）`);
   } catch (err) {
     const msg = err && err.message ? err.message : String(err);
     setApiStatus(`歷史資料回補未完成（${label}）：${msg}，可稍後手動重整`);
@@ -1214,6 +1420,7 @@ function changePage(pageName, options = {}) {
   pageName = resolvePageName(requestedPage);
   if (pageName === "admin" && !(currentUser && currentUser.isAdmin)) pageName = "dashboard";
   if (!pages[pageName] || !document.getElementById(pageName + "Page")) pageName = "dashboard";
+  if (pageName !== "dashboard") cancelIndicatorJobPolling_();
   closeMobileMore();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.page === pageName);
