@@ -8,18 +8,18 @@
 // - index.html / 導覽請求：network-first（部署後一定拿到新版；離線才回快取）。
 // - 帶 ?v= 版本戳的 js/css/icon：cache-first（版本一改就是新 URL，天然 immutable）。
 //
-// 發版檢查清單：改版時把 CACHE_VERSION 一起 bump（與 APP_VERSION 對齊），
-// 讓 activate 清掉舊快取、避免卡舊殼層。
-const CACHE_VERSION = "v11.21";
+// 發版檢查清單：每次靜態檔變更都要 bump CACHE_VERSION；純前端 hotfix 可在
+// APP_VERSION 後加 patch suffix，讓 activate 清掉舊快取、避免卡舊殼層。
+const CACHE_VERSION = "v11.21.1";
 const CACHE_NAME = "stocklab-shell-" + CACHE_VERSION;
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=11.21",
-  "./js/config.js?v=11.21",
-  "./js/api.js?v=11.21",
-  "./js/indicator-explain.js?v=11.21",
-  "./js/app.js?v=11.21",
+  "./css/style.css?v=11.21.1",
+  "./js/config.js?v=11.21.1",
+  "./js/api.js?v=11.21.1",
+  "./js/indicator-explain.js?v=11.21.1",
+  "./js/app.js?v=11.21.1",
   "./icons/favicon.svg",
   "./manifest.json"
 ];
