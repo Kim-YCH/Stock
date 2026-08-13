@@ -899,14 +899,15 @@ function clearCache(key) {
   }
 }
 
-function invalidateFrontendQuoteCaches() {
+function invalidateFrontendQuoteCaches(options = {}) {
+  const preserveDashboard = options.preserveDashboard === true;
   analysisMemoryCache.clear();
-  pageDataCache.dashboard = null;
+  if (!preserveDashboard) pageDataCache.dashboard = null;
   pageDataCache.portfolio = null;
   pageDataCache.candidates = null;
   pageDataCache.marketSummary = null;
   pageDataCache.analysis = {};
-  clearCache(CACHE_KEYS.dashboard);
+  if (!preserveDashboard) clearCache(CACHE_KEYS.dashboard);
 }
 
 function clearPageMemoryCache() {
@@ -1004,7 +1005,7 @@ function upsertCachedWatchlistItem(item) {
 }
 
 function replaceCachedWatchlistItem(symbol, nextItem) {
-  const cached = getCachedDashboard();
+  const cached = pageDataCache.dashboard || getCachedDashboard();
   if (!cached) return;
   const target = String(symbol || "").trim();
   cached.watchlist = (cached.watchlist || []).map(item => {
@@ -1045,7 +1046,7 @@ async function startBackgroundBackfill(symbols) {
   setApiStatus(`歷史資料背景回補中（${label}），約 1-3 分鐘，完成後自動更新，不必手動重整...`);
   try {
     const result = await Api.backfillHistoricalPrices(12, list.join(","), "watchlist");
-    invalidateFrontendQuoteCaches();
+    invalidateFrontendQuoteCaches({ preserveDashboard: true });
     await refreshDashboardSeamless_();
     const warning = result && String(result.warning || "").trim();
     setApiStatus(warning
@@ -1091,7 +1092,7 @@ async function onSubmitWatchlist(event) {
 
   try {
     const result = await Api.addWatchlist(payload);
-    if (payload.backfill === "true") invalidateFrontendQuoteCaches();
+    if (payload.backfill === "true") invalidateFrontendQuoteCaches({ preserveDashboard: true });
     // 待背景回補歷史的新股：後端秒回、不同步爬取（見 addWatchlistBatch_）。這幾檔先標「資料回補中」，
     // 由 startBackgroundBackfill 在背景另發爬取請求，完成後自動刷新——不再讓加入卡數分鐘、也不需手動重整。
     const pendingBackfill = (result.backfillPending && Array.isArray(result.backfillPendingSymbols))
