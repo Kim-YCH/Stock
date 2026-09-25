@@ -41,6 +41,11 @@ const pages = {
     subtitle: "依最新盤後技術指標產生，供下一交易日參考",
     loader: loadCandidates
   },
+  screener: {
+    title: "選股策略",
+    subtitle: "從上市、上櫃與 ETF 全市場依 AND 條件篩選",
+    loader: loadScreener
+  },
   market: {
     title: "市場總覽",
     subtitle: "大盤、廣度、關注清單與風險模式",
@@ -138,6 +143,418 @@ if ("serviceWorker" in navigator) {
 }
 
 let currentUser = null; // { email, role, isAdmin }
+
+const screenerState = {
+  meta: null,
+  conditions: [],
+  job: null,
+  items: [],
+  page: 1,
+  sortField: "volume",
+  sortDirection: "desc",
+  category: "all",
+  search: "",
+  pollTimer: null,
+  dataPollTimer: null,
+  pollInFlight: false,
+  requestEpoch: 0
+};
+
+function getScreenerDefinition_(field) {
+  return ((screenerState.meta && screenerState.meta.catalog) || []).find(item => item.field === field) || null;
+}
+
+function defaultScreenerCondition_(definition) {
+  const op = (definition.ops || [])[0] || ">";
+  let value = "";
+  if (definition.type === "enum") value = [];
+  else if (definition.type === "relation") value = true;
+  else if (op === "between") value = ["", ""];
+  return { field: definition.field, op, value };
+}
+
+function addScreenerCondition_(field) {
+  const definition = getScreenerDefinition_(field);
+  if (!definition || definition.available === false) return false;
+  screenerState.conditions.push(defaultScreenerCondition_(definition));
+  renderScreenerConditions_();
+  return true;
+}
+
+function updateScreenerCondition_(index, patch) {
+  index = Number(index);
+  if (!screenerState.conditions[index]) return false;
+  const condition = screenerState.conditions[index];
+  Object.assign(condition, patch || {});
+  const definition = getScreenerDefinition_(condition.field);
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "op")) {
+    if (condition.op === "between") condition.value = Array.isArray(condition.value) ? condition.value : ["", ""];
+    else if (definition && definition.type === "enum") condition.value = Array.isArray(condition.value) ? condition.value : [];
+    else if (definition && definition.type === "relation") condition.value = true;
+    else if (Array.isArray(condition.value)) condition.value = "";
+  }
+  renderScreenerConditions_();
+  return true;
+}
+
+function removeScreenerCondition_(index) {
+  index = Number(index);
+  if (index < 0 || index >= screenerState.conditions.length) return false;
+  screenerState.conditions.splice(index, 1);
+  renderScreenerConditions_();
+  return true;
+}
+
+function serializeScreenerConditions_() {
+  return screenerState.conditions.map(condition => {
+    const definition = getScreenerDefinition_(condition.field);
+    if (!definition) throw new Error("選股條件已失效，請重新加入");
+    let value = condition.value;
+    if (definition.type === "number") {
+      if (condition.op === "between") {
+        value = (Array.isArray(value) ? value : []).map(Number);
+        if (value.length !== 2 || !value.every(Number.isFinite)) throw new Error(definition.label + " 請輸入完整區間");
+      } else {
+        value = Number(value);
+        if (!Number.isFinite(value)) throw new Error(definition.label + " 請輸入數值");
+      }
+    } else if (definition.type === "enum") {
+      value = (Array.isArray(value) ? value : []).filter(Boolean);
+      if (!value.length) throw new Error(definition.label + " 請至少選一項");
+    } else {
+      value = value !== false;
+    }
+    return { field: condition.field, op: condition.op, value };
+  });
+}
+
+function filterScreenerCatalog_(catalog, category, search) {
+  const keyword = String(search || "").trim().toLowerCase();
+  return (catalog || []).filter(item => {
+    if (category && category !== "all" && item.category !== category) return false;
+    if (!keyword) return true;
+    return (String(item.label || "") + " " + String(item.field || "")).toLowerCase().includes(keyword);
+  });
+}
+
+function renderScreenerConditionValue_(condition, definition, index) {
+  if (definition.type === "relation") return `<span class="screener-relation-value">成立</span>`;
+  if (definition.type === "enum") {
+    return `<div class="screener-enum-options">${(definition.values || []).map(option => {
+      const checked = Array.isArray(condition.value) && condition.value.map(String).includes(String(option));
+      return `<label><input type="checkbox" data-screener-enum-index="${index}" value="${escapeHtml(option)}" ${checked ? "checked" : ""} />${escapeHtml(option)}</label>`;
+    }).join("")}</div>`;
+  }
+  if (condition.op === "between") {
+    const values = Array.isArray(condition.value) ? condition.value : ["", ""];
+    return `<div class="screener-between"><input type="number" step="any" data-screener-value-index="${index}" data-value-part="0" value="${escapeHtml(values[0])}" placeholder="最小" /><span>～</span><input type="number" step="any" data-screener-value-index="${index}" data-value-part="1" value="${escapeHtml(values[1])}" placeholder="最大" /></div>`;
+  }
+  return `<input type="number" step="any" data-screener-value-index="${index}" value="${escapeHtml(condition.value)}" placeholder="輸入數值" />`;
+}
+
+function renderScreenerConditions_() {
+  const container = document.getElementById("screenerConditionBar");
+  if (!container) return;
+  if (!screenerState.conditions.length) {
+    container.innerHTML = `<div class="screener-empty-condition">尚未加入條件。可從價量、技術、基本面及籌碼條件自由組合。</div>`;
+    return;
+  }
+  container.innerHTML = screenerState.conditions.map((condition, index) => {
+    const definition = getScreenerDefinition_(condition.field) || { label: condition.field, ops: [condition.op], type: "number" };
+    return `<article class="screener-condition-card" data-condition-index="${index}">
+      <div class="screener-condition-title"><strong>${escapeHtml(definition.label)}</strong><button type="button" class="icon-button" data-action="remove-screener-condition" data-index="${index}" aria-label="移除條件">×</button></div>
+      <div class="screener-condition-controls">
+        <select data-screener-op-index="${index}">${(definition.ops || []).map(op => `<option value="${escapeHtml(op)}" ${op === condition.op ? "selected" : ""}>${escapeHtml(op)}</option>`).join("")}</select>
+        ${renderScreenerConditionValue_(condition, definition, index)}
+      </div>
+    </article>`;
+  }).join(`<span class="screener-and-separator">AND</span>`);
+}
+
+function renderScreenerCatalog_() {
+  const container = document.getElementById("screenerCatalogList");
+  if (!container) return;
+  const items = filterScreenerCatalog_((screenerState.meta && screenerState.meta.catalog) || [], screenerState.category, screenerState.search);
+  container.innerHTML = items.length ? items.map(item => {
+    const unavailable = item.available === false;
+    return `<button type="button" class="screener-catalog-item${unavailable ? " is-unavailable" : ""}" data-screener-add-field="${escapeHtml(item.field)}" ${unavailable ? "disabled" : ""}><span><strong>${escapeHtml(item.label)}</strong><small>${unavailable ? "資料準備中" : escapeHtml(item.category || "")}</small></span><b>${unavailable ? "…" : "＋"}</b></button>`;
+  }).join("") : `<div class="candidate-empty">找不到符合的條件</div>`;
+  const tabs = document.getElementById("screenerCategoryTabs");
+  if (tabs) tabs.querySelectorAll("[data-screener-category]").forEach(button => button.classList.toggle("active", button.dataset.screenerCategory === screenerState.category));
+}
+
+function renderScreenerMeta_() {
+  const status = document.getElementById("screenerMetaStatus");
+  if (status) {
+    const data = (screenerState.meta && screenerState.meta.data) || {};
+    const dateText = data.dataDate ? `資料日 ${data.dataDate}` : "尚無可用快照";
+    const progressText = data.status && data.status !== "COMPLETED" && data.status !== "NOT_STARTED" ? ` · 背景更新 ${data.progress || 0}%` : "";
+    status.textContent = `${dateText}${progressText} · 上市、上櫃、ETF`;
+  }
+  ["btnRefreshScreenerDaily", "btnBootstrapScreenerData"].forEach(id => {
+    const button = document.getElementById(id);
+    if (button) button.hidden = !(currentUser && currentUser.isAdmin);
+  });
+}
+
+async function loadScreener() {
+  renderScreenerConditions_();
+  try {
+    screenerState.meta = await Api.getScreenerMeta();
+    renderScreenerMeta_();
+    renderScreenerCatalog_();
+    const dataState = screenerState.meta.data || {};
+    if (!isScreenerDataTerminal_(dataState)) scheduleScreenerDataPoll_();
+    if (screenerState.job && !isScreenerJobTerminal_(screenerState.job)) scheduleScreenerPoll_(screenerState.requestEpoch);
+  } catch (err) {
+    const status = document.getElementById("screenerMetaStatus");
+    if (status) status.textContent = "選股資料狀態讀取失敗：" + err.message;
+  }
+}
+
+function openScreenerConditionSheet_() {
+  renderScreenerCatalog_();
+  const sheet = document.getElementById("screenerConditionSheet");
+  if (sheet) sheet.hidden = false;
+  document.body.classList.add("floating-sheet-open");
+}
+
+function closeScreenerConditionSheet_() {
+  const sheet = document.getElementById("screenerConditionSheet");
+  if (sheet) sheet.hidden = true;
+  syncOverlayBodyClasses();
+}
+
+function onScreenerConditionInput_(event) {
+  const op = event.target.closest("[data-screener-op-index]");
+  if (op) {
+    updateScreenerCondition_(op.dataset.screenerOpIndex, { op: op.value });
+    return;
+  }
+  const valueInput = event.target.closest("[data-screener-value-index]");
+  if (valueInput) {
+    const index = Number(valueInput.dataset.screenerValueIndex);
+    const condition = screenerState.conditions[index];
+    if (!condition) return;
+    if (valueInput.dataset.valuePart !== undefined) {
+      const values = Array.isArray(condition.value) ? condition.value.slice() : ["", ""];
+      values[Number(valueInput.dataset.valuePart)] = valueInput.value;
+      condition.value = values;
+    } else condition.value = valueInput.value;
+    return;
+  }
+  const enumInput = event.target.closest("[data-screener-enum-index]");
+  if (enumInput) {
+    const index = Number(enumInput.dataset.screenerEnumIndex);
+    const selected = Array.from(document.querySelectorAll(`[data-screener-enum-index="${index}"]:checked`)).map(input => input.value);
+    if (screenerState.conditions[index]) screenerState.conditions[index].value = selected;
+  }
+}
+
+// END SCREENER CONDITION UI
+
+function isScreenerJobTerminal_(job) {
+  return !!job && (job.status === "COMPLETED" || job.status === "FAILED");
+}
+
+function isScreenerDataTerminal_(data) {
+  return !!data && ["COMPLETED", "FAILED", "NOT_STARTED"].includes(data.status);
+}
+
+function isScreenerRouteActive_() {
+  return resolvePageName(String(window.location.hash || "#screener").replace(/^#/, "")) === "screener";
+}
+
+function renderScreenerResultRows_(items) {
+  if (!items || !items.length) return `<tr><td colspan="9" class="candidate-empty">目前沒有符合條件的股票</td></tr>`;
+  return items.map(item => {
+    const change = Number(item.changePercent);
+    const changeClass = Number.isFinite(change) ? (change >= 0 ? "up" : "down") : "";
+    return `<tr>
+      <td data-label="股票"><div class="stock-cell"><strong>${escapeHtml(item.symbol || "")}</strong><small>${escapeHtml(item.name || "")}</small></div></td>
+      <td data-label="市場">${escapeHtml(item.market || "--")}</td>
+      <td data-label="產業">${escapeHtml(item.industry || "--")}</td>
+      <td data-label="收盤價">${escapeHtml(item.close === "" || item.close === undefined ? "--" : item.close)}</td>
+      <td data-label="漲跌幅" class="${changeClass}">${Number.isFinite(change) ? `${change > 0 ? "+" : ""}${change}%` : "--"}</td>
+      <td data-label="成交量">${Number.isFinite(Number(item.volume)) ? Number(item.volume).toLocaleString("zh-TW") : "--"}</td>
+      <td data-label="本益比">${escapeHtml(item.peRatio === "" || item.peRatio === undefined ? "--" : item.peRatio)}</td>
+      <td data-label="RSI">${escapeHtml(item.rsi14 === "" || item.rsi14 === undefined ? "--" : item.rsi14)}</td>
+      <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol || "")}">線圖</button><button type="button" data-action="add-screener-watchlist" data-symbol="${escapeHtml(item.symbol || "")}">加入自選</button></div></td>
+    </tr>`;
+  }).join("");
+}
+
+function renderScreenerPaginationHtml_(pageData) {
+  pageData = pageData || {};
+  const page = Number(pageData.page || 1);
+  const totalPages = Math.max(1, Number(pageData.totalPages || 1));
+  if (!Number(pageData.total || 0)) return "";
+  return `<button type="button" data-screener-page="${Math.max(1, page - 1)}" ${page <= 1 ? "disabled" : ""}>上一頁</button><span>第 ${page} / ${totalPages} 頁 · 共 ${Number(pageData.total || 0)} 筆</span><button type="button" data-screener-page="${Math.min(totalPages, page + 1)}" ${page >= totalPages ? "disabled" : ""}>下一頁</button>`;
+}
+
+function renderScreenerResults_(pageData) {
+  pageData = pageData || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 };
+  screenerState.items = pageData.items || [];
+  screenerState.page = Number(pageData.page || 1);
+  const body = document.getElementById("screenerResultBody");
+  const pagination = document.getElementById("screenerPagination");
+  if (body) body.innerHTML = renderScreenerResultRows_(screenerState.items);
+  if (pagination) pagination.innerHTML = renderScreenerPaginationHtml_(pageData);
+}
+
+function renderScreenerProgress_(job, errorMessage) {
+  const target = document.getElementById("screenerProgress");
+  if (!target) return;
+  if (errorMessage) {
+    target.textContent = errorMessage;
+    target.className = "muted warn";
+    return;
+  }
+  target.className = "muted";
+  if (!job) {
+    target.textContent = "加入條件後即可開始掃描全市場。";
+    return;
+  }
+  const progress = Number(job.progress || 0);
+  const scanned = Number(job.scannedCount || 0).toLocaleString("zh-TW");
+  const universe = Number(job.universeCount || 0).toLocaleString("zh-TW");
+  const matches = Number(job.matchCount || 0).toLocaleString("zh-TW");
+  target.textContent = job.status === "COMPLETED"
+    ? `掃描完成，共 ${matches} 檔符合條件。`
+    : `背景掃描 ${progress}%（${scanned} / ${universe}），目前 ${matches} 檔符合。`;
+}
+
+function stopScreenerPolling_() {
+  if (screenerState.pollTimer !== null) clearTimeout(screenerState.pollTimer);
+  screenerState.pollTimer = null;
+  screenerState.pollInFlight = false;
+  screenerState.requestEpoch += 1;
+}
+
+function scheduleScreenerPoll_(epoch) {
+  if (screenerState.pollTimer !== null || !screenerState.job || isScreenerJobTerminal_(screenerState.job)) return;
+  screenerState.pollTimer = setTimeout(() => {
+    screenerState.pollTimer = null;
+    pollScreenerJob_(epoch);
+  }, 5000);
+}
+
+async function loadScreenerResults_(page, epoch) {
+  if (!screenerState.job) return null;
+  const result = await Api.getScreenerResults(screenerState.job.jobId, page || 1, screenerState.sortField, screenerState.sortDirection);
+  if (epoch !== undefined && epoch !== screenerState.requestEpoch) return null;
+  renderScreenerResults_(result);
+  return result;
+}
+
+async function pollScreenerJob_(epoch) {
+  if (epoch !== screenerState.requestEpoch || !isScreenerRouteActive_() || !screenerState.job || screenerState.pollInFlight) return;
+  screenerState.pollInFlight = true;
+  try {
+    const job = await Api.continueScreener(screenerState.job.jobId);
+    if (epoch !== screenerState.requestEpoch) return;
+    screenerState.job = job;
+    renderScreenerProgress_(job);
+    await loadScreenerResults_(screenerState.page, epoch);
+    if (!isScreenerJobTerminal_(job)) scheduleScreenerPoll_(epoch);
+  } catch (err) {
+    if (epoch !== screenerState.requestEpoch) return;
+    renderScreenerProgress_(screenerState.job, "選股續跑失敗，將稍後重試：" + err.message);
+    if (err && err.code === "AUTH") {
+      stopScreenerPolling_();
+      if (typeof showAuthRequired === "function") showAuthRequired();
+    } else scheduleScreenerPoll_(epoch);
+  } finally {
+    if (epoch === screenerState.requestEpoch) screenerState.pollInFlight = false;
+  }
+}
+
+async function startScreenerRun_() {
+  const button = document.getElementById("btnStartScreener");
+  stopScreenerPolling_();
+  const epoch = screenerState.requestEpoch;
+  try {
+    if (button) button.disabled = true;
+    const conditions = serializeScreenerConditions_();
+    if (!conditions.length) throw new Error("請至少加入一個選股條件");
+    const sortField = document.getElementById("screenerSortField");
+    const sortDirection = document.getElementById("screenerSortDirection");
+    screenerState.sortField = sortField ? sortField.value : "volume";
+    screenerState.sortDirection = sortDirection ? sortDirection.value : "desc";
+    renderScreenerProgress_({ status: "QUEUED", progress: 0, scannedCount: 0, universeCount: 0, matchCount: 0 });
+    const response = await Api.startScreener(conditions, screenerState.sortField, screenerState.sortDirection);
+    if (epoch !== screenerState.requestEpoch) return;
+    screenerState.job = response;
+    renderScreenerProgress_(response);
+    renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
+    if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(epoch);
+  } catch (err) {
+    renderScreenerProgress_(null, "無法開始選股：" + err.message);
+    if (typeof showToast === "function") showToast("無法開始選股：" + err.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function changeScreenerResultsPage_(page) {
+  try { await loadScreenerResults_(page, screenerState.requestEpoch); }
+  catch (err) { renderScreenerProgress_(screenerState.job, "載入結果失敗：" + err.message); }
+}
+
+async function refreshScreenerData_(mode) {
+  const buttonId = mode === "bootstrap" ? "btnBootstrapScreenerData" : "btnRefreshScreenerDaily";
+  const button = document.getElementById(buttonId);
+  try {
+    if (button) button.disabled = true;
+    const state = await Api.refreshScreenerData(mode);
+    if (screenerState.meta) screenerState.meta.data = state;
+    renderScreenerMeta_();
+    scheduleScreenerDataPoll_();
+    showToast(mode === "bootstrap" ? "已開始建立 80 日全市場資料" : "已開始更新今日全市場資料", "info");
+  } catch (err) {
+    showToast("選股資料更新失敗：" + err.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function stopScreenerDataPolling_() {
+  if (screenerState.dataPollTimer !== null) clearTimeout(screenerState.dataPollTimer);
+  screenerState.dataPollTimer = null;
+}
+
+function scheduleScreenerDataPoll_() {
+  if (screenerState.dataPollTimer !== null || !isScreenerRouteActive_()) return;
+  screenerState.dataPollTimer = setTimeout(async () => {
+    screenerState.dataPollTimer = null;
+    if (!isScreenerRouteActive_()) return;
+    try {
+      screenerState.meta = await Api.getScreenerMeta();
+      renderScreenerMeta_();
+      const data = screenerState.meta.data || {};
+      if (!isScreenerDataTerminal_(data)) scheduleScreenerDataPoll_();
+    } catch (err) {
+      scheduleScreenerDataPoll_();
+    }
+  }, 10000);
+}
+
+async function addScreenerResultToWatchlist_(button) {
+  const symbol = normalizeSymbolInput(button && button.dataset.symbol);
+  if (!symbol) return;
+  try {
+    button.disabled = true;
+    await Api.addWatchlist({ symbol });
+    button.textContent = "已加入";
+    showToast(symbol + " 已加入自選股", "success");
+    refreshDashboardSeamless_().catch(() => {});
+  } catch (err) {
+    button.disabled = false;
+    showToast("加入自選股失敗：" + err.message, "error");
+  }
+}
+
+// END SCREENER RUN UI
 
 // GIS 是 async defer 載入，冷快取/慢網路時 showLoginOverlay() 執行當下
 // window.google 可能還不存在。這個 helper 確保「不管 GIS 何時就緒
@@ -340,6 +757,32 @@ function initApp() {
   document.getElementById("candidateFilter").addEventListener("change", () => {
     renderCandidates(currentCandidateData);
   });
+
+  const openScreenerConditions = document.getElementById("btnOpenScreenerConditions");
+  if (openScreenerConditions) openScreenerConditions.addEventListener("click", openScreenerConditionSheet_);
+  const screenerConditionBar = document.getElementById("screenerConditionBar");
+  if (screenerConditionBar) {
+    screenerConditionBar.addEventListener("change", onScreenerConditionInput_);
+    screenerConditionBar.addEventListener("input", onScreenerConditionInput_);
+  }
+  const screenerSearch = document.getElementById("screenerConditionSearch");
+  if (screenerSearch) screenerSearch.addEventListener("input", event => {
+    screenerState.search = event.target.value;
+    renderScreenerCatalog_();
+  });
+  const startScreenerButton = document.getElementById("btnStartScreener");
+  if (startScreenerButton) startScreenerButton.addEventListener("click", startScreenerRun_);
+  const screenerSortField = document.getElementById("screenerSortField");
+  const screenerSortDirection = document.getElementById("screenerSortDirection");
+  [screenerSortField, screenerSortDirection].filter(Boolean).forEach(select => select.addEventListener("change", () => {
+    screenerState.sortField = screenerSortField ? screenerSortField.value : "volume";
+    screenerState.sortDirection = screenerSortDirection ? screenerSortDirection.value : "desc";
+    if (screenerState.job) changeScreenerResultsPage_(1);
+  }));
+  const refreshScreenerDaily = document.getElementById("btnRefreshScreenerDaily");
+  if (refreshScreenerDaily) refreshScreenerDaily.addEventListener("click", () => refreshScreenerData_("daily"));
+  const bootstrapScreener = document.getElementById("btnBootstrapScreenerData");
+  if (bootstrapScreener) bootstrapScreener.addEventListener("click", () => refreshScreenerData_("bootstrap"));
 
   document.getElementById("btnUpdateDaily").addEventListener("click", onUpdateDailyPrices);
   const btnRunDerived = document.getElementById("btnRunDerived");
@@ -1236,6 +1679,37 @@ async function onDocumentClick(event) {
     closeMobileMore();
     return;
   }
+  if (event.target.closest('[data-action="close-screener-conditions"]')) {
+    closeScreenerConditionSheet_();
+    return;
+  }
+  const screenerCategoryButton = event.target.closest("[data-screener-category]");
+  if (screenerCategoryButton) {
+    screenerState.category = screenerCategoryButton.dataset.screenerCategory || "all";
+    renderScreenerCatalog_();
+    return;
+  }
+  const screenerCatalogButton = event.target.closest("[data-screener-add-field]");
+  if (screenerCatalogButton) {
+    addScreenerCondition_(screenerCatalogButton.dataset.screenerAddField || "");
+    closeScreenerConditionSheet_();
+    return;
+  }
+  const removeScreenerConditionButton = event.target.closest('[data-action="remove-screener-condition"]');
+  if (removeScreenerConditionButton) {
+    removeScreenerCondition_(removeScreenerConditionButton.dataset.index);
+    return;
+  }
+  const screenerPageButton = event.target.closest("[data-screener-page]");
+  if (screenerPageButton && !screenerPageButton.disabled) {
+    await changeScreenerResultsPage_(screenerPageButton.dataset.screenerPage);
+    return;
+  }
+  const addScreenerWatchlistButton = event.target.closest('[data-action="add-screener-watchlist"]');
+  if (addScreenerWatchlistButton) {
+    await addScreenerResultToWatchlist_(addScreenerWatchlistButton);
+    return;
+  }
   if (event.target.closest('[data-action="mobile-refresh"]')) {
     closeMobileMore();
     await loadDashboard({ force: true });
@@ -1391,6 +1865,7 @@ function onGlobalEscape(event) {
   const columnMenu = document.getElementById("watchColumnMenu");
   const lineMenu = document.getElementById("analysisLineControls");
   const mobileMore = document.getElementById("mobileMoreSheet");
+  const screenerConditions = document.getElementById("screenerConditionSheet");
   if (trade && !trade.hidden) closeTradeModal();
   if (notifications && !notifications.hidden) closeNotificationSheet();
   if (backfill && !backfill.hidden) closeBackfillSheet();
@@ -1398,6 +1873,7 @@ function onGlobalEscape(event) {
   if (columnMenu && !columnMenu.hidden) columnMenu.hidden = true;
   if (lineMenu && !lineMenu.hidden) lineMenu.hidden = true;
   if (mobileMore && !mobileMore.hidden) closeMobileMore();
+  if (screenerConditions && !screenerConditions.hidden) closeScreenerConditionSheet_();
 }
 
 let tradeLookupRequest = 0;
@@ -1433,6 +1909,10 @@ function changePage(pageName, options = {}) {
   if (pageName === "admin" && !(currentUser && currentUser.isAdmin)) pageName = "dashboard";
   if (!pages[pageName] || !document.getElementById(pageName + "Page")) pageName = "dashboard";
   if (pageName !== "dashboard") cancelIndicatorJobPolling_();
+  if (pageName !== "screener") {
+    if (typeof stopScreenerPolling_ === "function") stopScreenerPolling_();
+    if (typeof stopScreenerDataPolling_ === "function") stopScreenerDataPolling_();
+  }
   closeMobileMore();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.page === pageName);
@@ -3434,10 +3914,10 @@ function buildMobileMoreLinks() {
   const container = document.getElementById("mobileMoreLinks");
   if (!container) return;
   const links = [
-    ["market", "市場總覽"], ["refresh", "重新整理"], ["version", "版本資訊"]
+    ["screener", "選股策略"], ["market", "市場總覽"], ["refresh", "重新整理"], ["version", "版本資訊"]
   ];
-  container.innerHTML = links.map(([action, label]) => action === "market"
-    ? `<button type="button" data-action="open-page" data-page="market">${label}</button>`
+  container.innerHTML = links.map(([action, label]) => ["market", "screener"].includes(action)
+    ? `<button type="button" data-action="open-page" data-page="${action}">${label}</button>`
     : `<button type="button" data-action="mobile-${action}">${label}</button>`).join("");
 }
 

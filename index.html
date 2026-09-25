@@ -13,7 +13,7 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.21.1" />
+  <link rel="stylesheet" href="css/style.css?v=11.22" />
   <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -37,6 +37,7 @@
       <nav class="nav">
         <button class="nav-btn active" data-page="dashboard">首頁總覽</button>
         <button class="nav-btn" data-page="candidates">候選清單</button>
+        <button class="nav-btn" data-page="screener">選股策略</button>
         <button class="nav-btn" data-page="market">市場總覽</button>
         <button class="nav-btn" data-page="portfolio">我的庫存</button>
         <button class="nav-btn" data-page="analysis">線圖分析</button>
@@ -224,6 +225,63 @@
         </div>
       </section>
 
+      <section id="screenerPage" class="page">
+        <div class="screener-toolbar panel">
+          <div>
+            <div class="section-kicker">全市場盤後選股</div>
+            <h2>選股策略組合</h2>
+            <div id="screenerMetaStatus" class="muted">正在讀取上市、上櫃及 ETF 資料狀態…</div>
+          </div>
+          <div class="screener-toolbar-actions">
+            <button id="btnRefreshScreenerDaily" type="button" hidden>更新今日資料</button>
+            <button id="btnBootstrapScreenerData" type="button" hidden>首次建立 80 日資料</button>
+          </div>
+        </div>
+
+        <div class="panel screener-builder">
+          <div class="panel-header">
+            <div>
+              <h2>自訂選股條件</h2>
+              <div class="muted">所有條件固定以 AND 組合；本版不儲存策略。</div>
+            </div>
+            <button id="btnOpenScreenerConditions" type="button">＋ 加入條件</button>
+          </div>
+          <div id="screenerConditionBar" class="screener-condition-bar"></div>
+          <div class="screener-run-bar">
+            <span class="screener-logic-badge">AND</span>
+            <label>排序
+              <select id="screenerSortField">
+                <option value="volume">成交量</option>
+                <option value="changePercent">漲跌幅</option>
+                <option value="close">股價</option>
+                <option value="peRatio">本益比</option>
+                <option value="rsi14">RSI14</option>
+              </select>
+            </label>
+            <label>方向
+              <select id="screenerSortDirection"><option value="desc">高到低</option><option value="asc">低到高</option></select>
+            </label>
+            <button id="btnStartScreener" type="button">開始選股</button>
+          </div>
+        </div>
+
+        <div class="panel screener-results-panel">
+          <div class="panel-header">
+            <div>
+              <h2>符合條件清單</h2>
+              <div id="screenerProgress" class="muted">加入條件後即可開始掃描全市場。</div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="screener-results-table">
+              <thead id="screenerResultHead"><tr><th>股票</th><th>市場</th><th>產業</th><th>收盤價</th><th>漲跌幅</th><th>成交量</th><th>本益比</th><th>RSI</th><th>操作</th></tr></thead>
+              <tbody id="screenerResultBody"><tr><td colspan="9" class="candidate-empty">尚未執行選股</td></tr></tbody>
+            </table>
+          </div>
+          <div id="screenerPagination" class="screener-pagination"></div>
+        </div>
+      </section>
+
       <section id="marketPage" class="page">
         <div id="marketSummaryCards" class="grid-4"></div>
         <div class="panel"><h2>市場摘要</h2><div id="marketSummaryBody" class="v11-list"></div></div>
@@ -355,6 +413,28 @@
     </div>
   </div>
 
+  <div id="screenerConditionSheet" class="floating-sheet screener-condition-sheet" hidden>
+    <button class="floating-sheet-backdrop" type="button" data-action="close-screener-conditions" aria-label="關閉選股條件"></button>
+    <section class="floating-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="screenerConditionTitle">
+      <header class="floating-sheet-header">
+        <div><div class="detail-sheet-kicker">選股策略</div><h2 id="screenerConditionTitle">自訂選股條件</h2></div>
+        <button class="icon-button" type="button" data-action="close-screener-conditions" aria-label="關閉" title="關閉">×</button>
+      </header>
+      <div class="screener-catalog-tools">
+        <input id="screenerConditionSearch" type="search" placeholder="查詢條件…" autocomplete="off" />
+        <div id="screenerCategoryTabs" class="screener-category-tabs">
+          <button type="button" class="active" data-screener-category="all">全部</button>
+          <button type="button" data-screener-category="price">價量</button>
+          <button type="button" data-screener-category="technical">技術</button>
+          <button type="button" data-screener-category="fundamental">基本</button>
+          <button type="button" data-screener-category="institution">籌碼</button>
+          <button type="button" data-screener-category="basic">市場</button>
+        </div>
+      </div>
+      <div id="screenerCatalogList" class="floating-sheet-body screener-catalog-list"></div>
+    </section>
+  </div>
+
   <div id="dashboardDetailSheet" class="detail-sheet" hidden>
     <button class="detail-sheet-backdrop" type="button" data-action="close-dashboard-detail" aria-label="關閉明細"></button>
     <section class="detail-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="dashboardDetailTitle">
@@ -438,9 +518,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script defer src="js/config.js?v=11.21.1"></script>
-  <script defer src="js/api.js?v=11.21.1"></script>
-  <script defer src="js/indicator-explain.js?v=11.21.1"></script>
-  <script defer src="js/app.js?v=11.21.1"></script>
+  <script defer src="js/config.js?v=11.22"></script>
+  <script defer src="js/api.js?v=11.22"></script>
+  <script defer src="js/indicator-explain.js?v=11.22"></script>
+  <script defer src="js/app.js?v=11.22"></script>
 </body>
 </html>

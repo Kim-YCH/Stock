@@ -241,6 +241,14 @@ const Api = (() => {
     getBackendVersion: () => getOnce("version"),
     getDashboard: (force = false) => getOnce("dashboard", {}, { force }),
     getDashboardStatus: (options = {}) => jsonp("dashboard", {}, options),
+    getScreenerMeta: () => getOnce("screenerMeta", {}, { force: true }),
+    startScreener: (conditions, sortField = "volume", sortDirection = "desc") =>
+      jsonp("startScreener", { conditions: JSON.stringify(conditions), sortField, sortDirection }),
+    getScreenerStatus: (jobId) => getOnce("screenerStatus", { jobId }, { force: true }),
+    getScreenerResults: (jobId, page = 1, sortField = "volume", sortDirection = "desc") =>
+      getOnce("screenerResults", { jobId, page, sortField, sortDirection }, { force: true }),
+    continueScreener: (jobId) => jsonp("continueScreener", { jobId }),
+    refreshScreenerData: (mode = "daily") => jsonp("refreshScreenerData", { mode }),
     getCandidates: () => getOnce("candidates"),
     getMarketSummary: () => getOnce("marketSummary"),
     getNotifications: (params = {}) => getOnce("notifications", params),
