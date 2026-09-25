@@ -2086,7 +2086,7 @@ function renderCandidates(data) {
   const buyItems = sortCandidateItems(rawBuyItems.filter(item => candidateMatchesFilter(item, filterMode)), sortMode);
   const sellItems = sortCandidateItems(rawSellItems.filter(item => candidateMatchesFilter(item, filterMode)), sortMode);
   const status = document.getElementById("candidateStatus");
-  status.textContent = `盤後資料 ${data.dataDate || "尚未建立"} · 買入 ${rawBuyItems.length} 檔 · 賣出 ${rawSellItems.length} 檔 · 供下一交易日參考`;
+  status.textContent = String(data.dataDate || "");
   buyItems.concat(sellItems).forEach(cacheExplainContext);
   document.getElementById("candidateSummary").innerHTML = [
     summaryCard("買入候選", rawBuyItems.length, "up"),

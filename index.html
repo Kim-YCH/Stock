@@ -145,7 +145,7 @@
         <div class="candidate-toolbar">
           <div>
             <h2>盤後候選</h2>
-            <div id="candidateStatus" class="muted">尚未載入候選資料</div>
+            <div id="candidateStatus" class="muted"></div>
           </div>
           <div class="candidate-actions">
             <label class="candidate-sort">排序
@@ -172,7 +172,6 @@
           <div class="panel-header">
             <div>
               <h2>買入候選</h2>
-              <div class="muted">僅從已啟用的關注清單自動產生</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -200,7 +199,6 @@
           <div class="panel-header">
             <div>
               <h2>賣出候選</h2>
-              <div class="muted">僅從目前持有數量大於零的庫存自動產生</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -242,7 +240,6 @@
           <div class="panel-header">
             <div>
               <h2>自訂選股條件</h2>
-              <div class="muted">所有條件固定以 AND 組合；本版不儲存策略。</div>
             </div>
             <button id="btnOpenScreenerConditions" type="button">＋ 加入條件</button>
           </div>
@@ -269,7 +266,6 @@
           <div class="panel-header">
             <div>
               <h2>符合條件清單</h2>
-              <div id="screenerProgress" class="muted">加入條件後即可開始掃描全市場。</div>
             </div>
           </div>
           <div class="table-wrap">
@@ -302,7 +298,6 @@
           <div class="panel-header">
             <div>
               <h2>持有部位</h2>
-              <div class="muted">今日損益以最近兩個交易日收盤價計算</div>
             </div>
             <button id="btnRefreshPortfolio" type="button">重新計算</button>
           </div>
@@ -345,7 +340,7 @@
       <section id="analysisPage" class="page">
         <div class="panel">
           <div class="panel-header">
-            <div><h2 id="analysisTitle">線圖分析</h2><div class="muted">輸入台股代號查看線圖、指標、系統分析、持股與交易。</div></div>
+            <div><h2 id="analysisTitle">線圖分析</h2></div>
             <div class="inline-form">
               <input id="analysisSymbol" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 006208" />
               <button id="btnLoadAnalysis">查詢</button>
@@ -521,6 +516,6 @@
   <script defer src="js/config.js?v=11.22"></script>
   <script defer src="js/api.js?v=11.22"></script>
   <script defer src="js/indicator-explain.js?v=11.22"></script>
-  <script defer src="js/app.js?v=11.22"></script>
+  <script defer src="js/app.js?v=11.22.1"></script>
 </body>
 </html>
