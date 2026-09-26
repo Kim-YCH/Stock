@@ -51,6 +51,7 @@
 - `lastProgressAt`：最近一次 cursor、phase 或輸出確實前進的時間。
 - `lastScheduledAt`：最近一次確認快速接力觸發器存在的時間。
 - `consecutiveFailures`：連續資料處理失敗次數；鎖忙或 superseded 不計入。
+- `retryNotBefore`：真實資料錯誤後的下次允許執行時間，供退避與 watchdog 判斷。
 - `lastError`：最後一個可供管理者與前端辨識的錯誤摘要。
 
 既有 `jobId`、`phase`、`dateCursor`、`metricCursor`、`status` 和 `progress` 保持相容。
