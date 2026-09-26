@@ -23,3 +23,6 @@ README_START_HERE.txt
 
 # 舊的前端資料夾，根目錄檔案才是 GitHub Pages 使用的版本
 frontend/
+
+# Local isolated worktrees used for implementation tasks.
+.worktrees/
