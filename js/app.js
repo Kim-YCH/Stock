@@ -288,7 +288,13 @@ function renderScreenerMeta_() {
   if (status) {
     const data = (screenerState.meta && screenerState.meta.data) || {};
     const dateText = data.dataDate ? `資料日 ${data.dataDate}` : "尚無可用快照";
-    const progressText = data.status && data.status !== "COMPLETED" && data.status !== "NOT_STARTED" ? ` · 背景更新 ${data.progress || 0}%` : "";
+    const progressText = data.status === "FAILED"
+      ? " · 背景更新暫停"
+      : data.recovering || data.stalled
+        ? ` · 背景更新 ${data.progress || 0}% · 正在自動恢復`
+        : data.status && data.status !== "COMPLETED" && data.status !== "NOT_STARTED"
+          ? ` · 背景更新 ${data.progress || 0}%`
+          : "";
     status.textContent = `${dateText}${progressText} · 上市、上櫃、ETF`;
   }
   ["btnRefreshScreenerDaily", "btnBootstrapScreenerData"].forEach(id => {
