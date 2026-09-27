@@ -479,7 +479,9 @@ function setScreenerPaginationBusy_(busy) {
   else pagination.removeAttribute("aria-busy");
   pagination.querySelectorAll("button").forEach(button => {
     if (busy) {
-      button.dataset.screenerWasDisabled = button.disabled ? "1" : "0";
+      if (!Object.prototype.hasOwnProperty.call(button.dataset, "screenerWasDisabled")) {
+        button.dataset.screenerWasDisabled = button.disabled ? "1" : "0";
+      }
       button.disabled = true;
     } else if (Object.prototype.hasOwnProperty.call(button.dataset, "screenerWasDisabled")) {
       button.disabled = button.dataset.screenerWasDisabled === "1";
@@ -543,8 +545,10 @@ async function pollScreenerJob_(epoch) {
     screenerState.job = job;
     syncScreenerRunButton_();
     renderScreenerProgress_(job);
-    const pageRequestId = ++screenerState.pageRequestId;
-    await loadScreenerResults_(screenerState.page, epoch, pageRequestId);
+    if (!screenerState.pageLoading) {
+      const pageRequestId = ++screenerState.pageRequestId;
+      await loadScreenerResults_(screenerState.page, epoch, pageRequestId);
+    }
     if (!isScreenerJobTerminal_(job)) scheduleScreenerPoll_(epoch);
   } catch (err) {
     if (epoch !== screenerState.requestEpoch) return;
@@ -575,9 +579,9 @@ async function startScreenerRun_() {
     screenerState.sortDirection = sortDirection ? sortDirection.value : "desc";
     renderScreenerProgress_({ status: "QUEUED", progress: 0, scannedCount: 0, universeCount: 0, matchCount: 0 });
     const response = await Api.startScreener(conditions, screenerState.sortField, screenerState.sortDirection);
-    if (epoch !== screenerState.requestEpoch) return;
     screenerState.job = response;
     syncScreenerRunButton_();
+    if (epoch !== screenerState.requestEpoch) return response;
     renderScreenerProgress_(response);
     renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
     if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(epoch);
