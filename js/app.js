@@ -529,9 +529,13 @@ function scheduleScreenerPoll_(epoch) {
 
 async function loadScreenerResults_(page, epoch, pageRequestId) {
   if (!screenerState.job) return null;
+  const requestedKey = screenerPageCacheKey_(page || 1);
   const result = await getScreenerResultsPage_(page || 1);
   if (epoch !== undefined && epoch !== screenerState.requestEpoch) return null;
   if (pageRequestId !== undefined && pageRequestId !== screenerState.pageRequestId) return null;
+  if (requestedKey !== screenerPageCacheKey_(page || 1)) {
+    return loadScreenerResults_(page, epoch, pageRequestId);
+  }
   renderScreenerResults_(result);
   return result;
 }
@@ -581,10 +585,11 @@ async function startScreenerRun_() {
     const response = await Api.startScreener(conditions, screenerState.sortField, screenerState.sortDirection);
     screenerState.job = response;
     syncScreenerRunButton_();
-    if (epoch !== screenerState.requestEpoch) return response;
+    if (!isScreenerRouteActive_()) return response;
+    const activeEpoch = screenerState.requestEpoch;
     renderScreenerProgress_(response);
     renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
-    if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(epoch);
+    if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(activeEpoch);
   } catch (err) {
     renderScreenerProgress_(null, "無法開始選股：" + err.message);
     if (typeof showToast === "function") showToast("無法開始選股：" + err.message, "error");
