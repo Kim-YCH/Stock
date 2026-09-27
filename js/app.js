@@ -157,6 +157,10 @@ const screenerState = {
   pollTimer: null,
   dataPollTimer: null,
   pollInFlight: false,
+  startInFlight: false,
+  pageCache: new Map(),
+  pageRequestId: 0,
+  pageLoading: false,
   requestEpoch: 0
 };
 
@@ -252,6 +256,11 @@ function renderScreenerConditionValue_(condition, definition, index) {
   return `<input type="number" step="any" data-screener-value-index="${index}" value="${escapeHtml(condition.value)}" placeholder="輸入數值" />`;
 }
 
+function shouldRenderScreenerOperator_(definition) {
+  const ops = (definition && definition.ops) || [];
+  return !(ops.length === 1 && ops[0] === "in");
+}
+
 function renderScreenerConditions_() {
   const container = document.getElementById("screenerConditionBar");
   if (!container) return;
@@ -264,7 +273,7 @@ function renderScreenerConditions_() {
     return `<article class="screener-condition-card" data-condition-index="${index}">
       <div class="screener-condition-title"><strong>${escapeHtml(definition.label)}</strong><button type="button" class="icon-button" data-action="remove-screener-condition" data-index="${index}" aria-label="移除條件">×</button></div>
       <div class="screener-condition-controls">
-        <select data-screener-op-index="${index}">${(definition.ops || []).map(op => `<option value="${escapeHtml(op)}" ${op === condition.op ? "selected" : ""}>${escapeHtml(op)}</option>`).join("")}</select>
+        ${shouldRenderScreenerOperator_(definition) ? `<select data-screener-op-index="${index}">${(definition.ops || []).map(op => `<option value="${escapeHtml(op)}" ${op === condition.op ? "selected" : ""}>${escapeHtml(op)}</option>`).join("")}</select>` : ""}
         ${renderScreenerConditionValue_(condition, definition, index)}
       </div>
     </article>`;
@@ -305,6 +314,7 @@ function renderScreenerMeta_() {
 
 async function loadScreener() {
   renderScreenerConditions_();
+  syncScreenerRunButton_();
   try {
     screenerState.meta = await Api.getScreenerMeta();
     renderScreenerMeta_();
@@ -363,6 +373,22 @@ function isScreenerJobTerminal_(job) {
   return !!job && (job.status === "COMPLETED" || job.status === "FAILED");
 }
 
+function isScreenerRunActive_() {
+  return screenerState.startInFlight ||
+    !!(screenerState.job && !isScreenerJobTerminal_(screenerState.job));
+}
+
+function syncScreenerRunButton_() {
+  const button = document.getElementById("btnStartScreener");
+  if (!button) return;
+  const active = isScreenerRunActive_();
+  button.disabled = active;
+  button.textContent = active ? "選股中" : "開始選股";
+  button.classList.toggle("is-loading", active);
+  if (active) button.setAttribute("aria-busy", "true");
+  else button.removeAttribute("aria-busy");
+}
+
 function isScreenerDataTerminal_(data) {
   return !!data && ["COMPLETED", "FAILED", "NOT_STARTED"].includes(data.status);
 }
@@ -406,6 +432,60 @@ function renderScreenerResults_(pageData) {
   const pagination = document.getElementById("screenerPagination");
   if (body) body.innerHTML = renderScreenerResultRows_(screenerState.items);
   if (pagination) pagination.innerHTML = renderScreenerPaginationHtml_(pageData);
+  prefetchAdjacentScreenerPages_(pageData);
+}
+
+function screenerPageCacheKey_(page) {
+  const job = screenerState.job || {};
+  return [job.jobId || "", Number(job.matchCount || 0), Number(page || 1),
+    screenerState.sortField, screenerState.sortDirection].join(":");
+}
+
+function getScreenerResultsPage_(page) {
+  if (!screenerState.job) return Promise.resolve(null);
+  const normalizedPage = Math.max(1, Number(page || 1));
+  const key = screenerPageCacheKey_(normalizedPage);
+  if (screenerState.pageCache.has(key)) return screenerState.pageCache.get(key);
+  const request = Promise.resolve().then(() => Api.getScreenerResults(
+    screenerState.job.jobId,
+    normalizedPage,
+    screenerState.sortField,
+    screenerState.sortDirection
+  )).then(result => {
+    screenerState.pageCache.set(key, Promise.resolve(result));
+    return result;
+  }).catch(err => {
+    if (screenerState.pageCache.get(key) === request) screenerState.pageCache.delete(key);
+    throw err;
+  });
+  screenerState.pageCache.set(key, request);
+  return request;
+}
+
+function prefetchAdjacentScreenerPages_(pageData) {
+  if (!screenerState.job || !pageData) return;
+  const page = Number(pageData.page || 1);
+  const totalPages = Math.max(1, Number(pageData.totalPages || 1));
+  [page - 1, page + 1].filter(candidate => candidate >= 1 && candidate <= totalPages)
+    .forEach(candidate => { getScreenerResultsPage_(candidate).catch(() => {}); });
+}
+
+function setScreenerPaginationBusy_(busy) {
+  screenerState.pageLoading = !!busy;
+  const pagination = document.getElementById("screenerPagination");
+  if (!pagination) return;
+  pagination.classList.toggle("is-loading", !!busy);
+  if (busy) pagination.setAttribute("aria-busy", "true");
+  else pagination.removeAttribute("aria-busy");
+  pagination.querySelectorAll("button").forEach(button => {
+    if (busy) {
+      button.dataset.screenerWasDisabled = button.disabled ? "1" : "0";
+      button.disabled = true;
+    } else if (Object.prototype.hasOwnProperty.call(button.dataset, "screenerWasDisabled")) {
+      button.disabled = button.dataset.screenerWasDisabled === "1";
+      delete button.dataset.screenerWasDisabled;
+    }
+  });
 }
 
 function renderScreenerProgress_(job, errorMessage) {
@@ -445,10 +525,11 @@ function scheduleScreenerPoll_(epoch) {
   }, 5000);
 }
 
-async function loadScreenerResults_(page, epoch) {
+async function loadScreenerResults_(page, epoch, pageRequestId) {
   if (!screenerState.job) return null;
-  const result = await Api.getScreenerResults(screenerState.job.jobId, page || 1, screenerState.sortField, screenerState.sortDirection);
+  const result = await getScreenerResultsPage_(page || 1);
   if (epoch !== undefined && epoch !== screenerState.requestEpoch) return null;
+  if (pageRequestId !== undefined && pageRequestId !== screenerState.pageRequestId) return null;
   renderScreenerResults_(result);
   return result;
 }
@@ -460,8 +541,10 @@ async function pollScreenerJob_(epoch) {
     const job = await Api.continueScreener(screenerState.job.jobId);
     if (epoch !== screenerState.requestEpoch) return;
     screenerState.job = job;
+    syncScreenerRunButton_();
     renderScreenerProgress_(job);
-    await loadScreenerResults_(screenerState.page, epoch);
+    const pageRequestId = ++screenerState.pageRequestId;
+    await loadScreenerResults_(screenerState.page, epoch, pageRequestId);
     if (!isScreenerJobTerminal_(job)) scheduleScreenerPoll_(epoch);
   } catch (err) {
     if (epoch !== screenerState.requestEpoch) return;
@@ -476,11 +559,14 @@ async function pollScreenerJob_(epoch) {
 }
 
 async function startScreenerRun_() {
-  const button = document.getElementById("btnStartScreener");
+  if (isScreenerRunActive_()) return null;
   stopScreenerPolling_();
   const epoch = screenerState.requestEpoch;
+  screenerState.startInFlight = true;
+  screenerState.pageCache.clear();
+  screenerState.pageRequestId += 1;
+  syncScreenerRunButton_();
   try {
-    if (button) button.disabled = true;
     const conditions = serializeScreenerConditions_();
     if (!conditions.length) throw new Error("請至少加入一個選股條件");
     const sortField = document.getElementById("screenerSortField");
@@ -491,6 +577,7 @@ async function startScreenerRun_() {
     const response = await Api.startScreener(conditions, screenerState.sortField, screenerState.sortDirection);
     if (epoch !== screenerState.requestEpoch) return;
     screenerState.job = response;
+    syncScreenerRunButton_();
     renderScreenerProgress_(response);
     renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
     if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(epoch);
@@ -498,13 +585,24 @@ async function startScreenerRun_() {
     renderScreenerProgress_(null, "無法開始選股：" + err.message);
     if (typeof showToast === "function") showToast("無法開始選股：" + err.message, "error");
   } finally {
-    if (button) button.disabled = false;
+    screenerState.startInFlight = false;
+    syncScreenerRunButton_();
   }
 }
 
 async function changeScreenerResultsPage_(page) {
-  try { await loadScreenerResults_(page, screenerState.requestEpoch); }
-  catch (err) { renderScreenerProgress_(screenerState.job, "載入結果失敗：" + err.message); }
+  const epoch = screenerState.requestEpoch;
+  const pageRequestId = ++screenerState.pageRequestId;
+  setScreenerPaginationBusy_(true);
+  try {
+    await loadScreenerResults_(page, epoch, pageRequestId);
+  } catch (err) {
+    if (pageRequestId === screenerState.pageRequestId) {
+      renderScreenerProgress_(screenerState.job, "載入結果失敗：" + err.message);
+    }
+  } finally {
+    if (pageRequestId === screenerState.pageRequestId) setScreenerPaginationBusy_(false);
+  }
 }
 
 async function refreshScreenerData_(mode) {

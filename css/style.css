@@ -2466,6 +2466,23 @@ button.dashboard-metric-card {
   margin-right: auto;
 }
 
+#btnStartScreener.is-loading::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 7px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: screener-button-spin 0.75s linear infinite;
+}
+
+@keyframes screener-button-spin {
+  to { transform: rotate(360deg); }
+}
+
 .screener-results-table {
   min-width: 980px;
 }
@@ -2476,6 +2493,12 @@ button.dashboard-metric-card {
   align-items: center;
   gap: 8px;
   margin-top: 16px;
+}
+
+.screener-pagination.is-loading::after {
+  content: "載入中…";
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .screener-catalog-tools {
