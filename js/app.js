@@ -453,6 +453,7 @@ function acceptScreenerCompleteResults_(job, results) {
   };
   screenerState.pageCache.clear();
   screenerState.pageRequestId += 1;
+  setScreenerPaginationBusy_(false);
   return true;
 }
 
