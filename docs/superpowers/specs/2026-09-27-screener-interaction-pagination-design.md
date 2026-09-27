@@ -33,7 +33,7 @@
 `screenerState` 增加兩類狀態：
 
 - 選股執行狀態：以現有 `job.status` 為主要依據，搭配初始請求中的旗標，統一由一個按鈕同步函式控制文字、停用與動畫。
-- 分頁狀態：記錄目前分頁請求序號、載入中狀態，以及以 `jobId + page + sortField + sortDirection` 為鍵的頁面 Promise／結果快取。
+- 分頁狀態：記錄目前分頁請求序號、載入中狀態，以及以 `jobId + matchCount + page + sortField + sortDirection` 為鍵的頁面 Promise／結果快取；背景批次新增結果後會自然使用新鍵，不會沿用舊頁面。
 
 資料流程：
 
