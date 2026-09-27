@@ -35,6 +35,7 @@
 - `total`：符合條件總數。
 - `pageSize`：固定為 10。
 - `allLoaded`：完整結果成功載入時為 `true`。
+- `jobId`：產生這份完整結果的工作識別碼。
 - `revision`：以工作 `matchCount` 表示的結果版本。
 - `sortField`、`sortDirection`：產生結果時的排序資訊。
 
