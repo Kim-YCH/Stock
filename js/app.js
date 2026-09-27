@@ -161,6 +161,8 @@ const screenerState = {
   pageCache: new Map(),
   pageRequestId: 0,
   pageLoading: false,
+  completeResults: null,
+  completeResultsDisabled: false,
   requestEpoch: 0
 };
 
@@ -435,6 +437,69 @@ function renderScreenerResults_(pageData) {
   prefetchAdjacentScreenerPages_(pageData);
 }
 
+function clearScreenerCompleteResults_() {
+  screenerState.completeResults = null;
+  screenerState.completeResultsDisabled = false;
+}
+
+function acceptScreenerCompleteResults_(job, results) {
+  if (!job || !results || results.allLoaded !== true || !Array.isArray(results.items)) return false;
+  if (String(results.jobId || "") !== String(job.jobId || "")) return false;
+  if (Number(results.revision || 0) !== Number(job.matchCount || 0)) return false;
+  screenerState.completeResults = {
+    jobId: String(job.jobId || ""),
+    revision: Number(results.revision || 0),
+    items: results.items.slice()
+  };
+  screenerState.pageCache.clear();
+  screenerState.pageRequestId += 1;
+  return true;
+}
+
+function sortScreenerListRows_(rows, sortField, sortDirection) {
+  return (rows || []).slice().sort((left, right) => {
+    const a = left[sortField];
+    const b = right[sortField];
+    const aBlank = a === "" || a === null || a === undefined;
+    const bBlank = b === "" || b === null || b === undefined;
+    if (aBlank !== bBlank) return aBlank ? 1 : -1;
+    const aNumber = Number(a);
+    const bNumber = Number(b);
+    let comparison = !aBlank && !bBlank && Number.isFinite(aNumber) && Number.isFinite(bNumber)
+      ? aNumber - bNumber
+      : String(a || "").localeCompare(String(b || ""), "zh-Hant");
+    if (comparison === 0) comparison = String(left.symbol || "").localeCompare(String(right.symbol || ""));
+    return sortDirection === "asc" ? comparison : -comparison;
+  });
+}
+
+function getLocalScreenerPage_(page) {
+  if (!screenerState.completeResults) return null;
+  const sorted = sortScreenerListRows_(
+    screenerState.completeResults.items,
+    screenerState.sortField,
+    screenerState.sortDirection
+  );
+  const total = sorted.length;
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  page = Math.min(totalPages, Math.max(1, Number(page || 1)));
+  return {
+    items: sorted.slice((page - 1) * pageSize, page * pageSize),
+    page,
+    pageSize,
+    total,
+    totalPages
+  };
+}
+
+function renderLocalScreenerPage_(page) {
+  const pageData = getLocalScreenerPage_(page);
+  if (!pageData) return false;
+  renderScreenerResults_(pageData);
+  return true;
+}
+
 function screenerPageCacheKey_(page) {
   const job = screenerState.job || {};
   return [job.jobId || "", Number(job.matchCount || 0), Number(page || 1),
@@ -463,7 +528,7 @@ function getScreenerResultsPage_(page) {
 }
 
 function prefetchAdjacentScreenerPages_(pageData) {
-  if (!screenerState.job || !pageData) return;
+  if (screenerState.completeResults || screenerState.completeResultsDisabled || !screenerState.job || !pageData) return;
   const page = Number(pageData.page || 1);
   const totalPages = Math.max(1, Number(pageData.totalPages || 1));
   [page - 1, page + 1].filter(candidate => candidate >= 1 && candidate <= totalPages)
@@ -544,18 +609,41 @@ async function pollScreenerJob_(epoch) {
   if (epoch !== screenerState.requestEpoch || !isScreenerRouteActive_() || !screenerState.job || screenerState.pollInFlight) return;
   screenerState.pollInFlight = true;
   try {
-    const job = await Api.continueScreener(screenerState.job.jobId);
+    const job = await Api.continueScreener(
+      screenerState.job.jobId,
+      !screenerState.completeResultsDisabled
+    );
     if (epoch !== screenerState.requestEpoch) return;
     screenerState.job = job;
     syncScreenerRunButton_();
     renderScreenerProgress_(job);
-    if (!screenerState.pageLoading) {
+    const acceptedCompleteResults = acceptScreenerCompleteResults_(job, job.results);
+    if (acceptedCompleteResults) {
+      renderLocalScreenerPage_(screenerState.page);
+    } else if (!screenerState.pageLoading) {
       const pageRequestId = ++screenerState.pageRequestId;
       await loadScreenerResults_(screenerState.page, epoch, pageRequestId);
     }
     if (!isScreenerJobTerminal_(job)) scheduleScreenerPoll_(epoch);
   } catch (err) {
     if (epoch !== screenerState.requestEpoch) return;
+    if (!err || err.code !== "AUTH") {
+      try {
+        const statusJob = await Api.getScreenerStatus(screenerState.job.jobId);
+        if (epoch !== screenerState.requestEpoch) return;
+        if (isScreenerJobTerminal_(statusJob)) {
+          screenerState.job = statusJob;
+          syncScreenerRunButton_();
+          renderScreenerProgress_(statusJob);
+          if (statusJob.status === "COMPLETED") {
+            screenerState.completeResultsDisabled = true;
+            const pageRequestId = ++screenerState.pageRequestId;
+            await loadScreenerResults_(screenerState.page, epoch, pageRequestId);
+          }
+          return;
+        }
+      } catch (statusError) {}
+    }
     renderScreenerProgress_(screenerState.job, "選股續跑失敗，將稍後重試：" + err.message);
     if (err && err.code === "AUTH") {
       stopScreenerPolling_();
@@ -569,6 +657,7 @@ async function pollScreenerJob_(epoch) {
 async function startScreenerRun_() {
   if (isScreenerRunActive_()) return null;
   stopScreenerPolling_();
+  clearScreenerCompleteResults_();
   const epoch = screenerState.requestEpoch;
   screenerState.startInFlight = true;
   screenerState.pageCache.clear();
@@ -588,7 +677,16 @@ async function startScreenerRun_() {
     if (!isScreenerRouteActive_()) return response;
     const activeEpoch = screenerState.requestEpoch;
     renderScreenerProgress_(response);
-    renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
+    const acceptedCompleteResults = acceptScreenerCompleteResults_(response, response.results);
+    if (acceptedCompleteResults) {
+      renderLocalScreenerPage_(1);
+    } else if (!response.results || response.results.allLoaded !== true) {
+      renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
+    } else {
+      screenerState.completeResultsDisabled = true;
+      const pageRequestId = ++screenerState.pageRequestId;
+      await loadScreenerResults_(1, activeEpoch, pageRequestId);
+    }
     if (!isScreenerJobTerminal_(response)) scheduleScreenerPoll_(activeEpoch);
   } catch (err) {
     renderScreenerProgress_(null, "無法開始選股：" + err.message);
@@ -602,6 +700,10 @@ async function startScreenerRun_() {
 async function changeScreenerResultsPage_(page) {
   const epoch = screenerState.requestEpoch;
   const pageRequestId = ++screenerState.pageRequestId;
+  if (renderLocalScreenerPage_(page)) {
+    setScreenerPaginationBusy_(false);
+    return;
+  }
   setScreenerPaginationBusy_(true);
   try {
     await loadScreenerResults_(page, epoch, pageRequestId);
@@ -890,7 +992,8 @@ function initApp() {
   [screenerSortField, screenerSortDirection].filter(Boolean).forEach(select => select.addEventListener("change", () => {
     screenerState.sortField = screenerSortField ? screenerSortField.value : "volume";
     screenerState.sortDirection = screenerSortDirection ? screenerSortDirection.value : "desc";
-    if (screenerState.job) changeScreenerResultsPage_(1);
+    if (screenerState.completeResults) renderLocalScreenerPage_(1);
+    else if (screenerState.job) changeScreenerResultsPage_(1);
   }));
   const refreshScreenerDaily = document.getElementById("btnRefreshScreenerDaily");
   if (refreshScreenerDaily) refreshScreenerDaily.addEventListener("click", () => refreshScreenerData_("daily"));

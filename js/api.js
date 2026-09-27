@@ -247,7 +247,8 @@ const Api = (() => {
     getScreenerStatus: (jobId) => getOnce("screenerStatus", { jobId }, { force: true }),
     getScreenerResults: (jobId, page = 1, sortField = "volume", sortDirection = "desc") =>
       getOnce("screenerResults", { jobId, page, sortField, sortDirection }, { force: true }),
-    continueScreener: (jobId) => jsonp("continueScreener", { jobId }),
+    continueScreener: (jobId, includeAll = true) =>
+      jsonp("continueScreener", { jobId, includeAll: includeAll ? "1" : "0" }),
     refreshScreenerData: (mode = "daily") => jsonp("refreshScreenerData", { mode }),
     getCandidates: () => getOnce("candidates"),
     getMarketSummary: () => getOnce("marketSummary"),
