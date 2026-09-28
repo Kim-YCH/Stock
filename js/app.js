@@ -162,9 +162,13 @@ const screenerState = {
   pageRequestId: 0,
   pageLoading: false,
   completeResults: null,
+  incrementalResults: null,
   completeResultsDisabled: false,
   requestEpoch: 0
 };
+
+const SCREENER_SUCCESS_POLL_MS = 500;
+const SCREENER_ERROR_POLL_MS = 5000;
 
 function getScreenerDefinition_(field) {
   return ((screenerState.meta && screenerState.meta.catalog) || []).find(item => item.field === field) || null;
@@ -437,9 +441,39 @@ function renderScreenerResults_(pageData) {
   prefetchAdjacentScreenerPages_(pageData);
 }
 
+function clearScreenerIncrementalResults_() {
+  screenerState.incrementalResults = null;
+}
+
 function clearScreenerCompleteResults_() {
   screenerState.completeResults = null;
+  clearScreenerIncrementalResults_();
   screenerState.completeResultsDisabled = false;
+}
+
+function acceptScreenerBatchResults_(job, batchResults) {
+  if (!job || !batchResults || !Array.isArray(batchResults.items)) return false;
+  const jobId = String(job.jobId || "");
+  const startCursor = Number(batchResults.startCursor || 0);
+  const endCursor = Number(batchResults.endCursor || 0);
+  const revision = Number(batchResults.revision || 0);
+  if (!jobId || String(batchResults.jobId || "") !== jobId) return false;
+  if (endCursor < startCursor || endCursor > Number(job.cursor || 0)) return false;
+  if (revision !== Number(job.matchCount || 0)) return false;
+  let current = screenerState.incrementalResults;
+  if (!current || current.jobId !== jobId) {
+    current = { jobId: jobId, cursor: 0, revision: 0, bySymbol: {} };
+  }
+  if (startCursor > Number(current.cursor || 0)) return false;
+  batchResults.items.forEach(row => {
+    const symbol = String(row && row.symbol || "").trim();
+    if (symbol) current.bySymbol[symbol] = row;
+  });
+  current.cursor = Math.max(Number(current.cursor || 0), endCursor);
+  current.revision = Math.max(Number(current.revision || 0), revision);
+  screenerState.incrementalResults = current;
+  screenerState.pageCache.clear();
+  return true;
 }
 
 function acceptScreenerCompleteResults_(job, results) {
@@ -451,6 +485,7 @@ function acceptScreenerCompleteResults_(job, results) {
     revision: Number(results.revision || 0),
     items: results.items.slice()
   };
+  clearScreenerIncrementalResults_();
   screenerState.pageCache.clear();
   screenerState.pageRequestId += 1;
   setScreenerPaginationBusy_(false);
@@ -474,10 +509,18 @@ function sortScreenerListRows_(rows, sortField, sortDirection) {
   });
 }
 
+function getScreenerLocalRows_() {
+  if (screenerState.completeResults) return screenerState.completeResults.items;
+  if (screenerState.incrementalResults) return Object.keys(screenerState.incrementalResults.bySymbol)
+    .map(symbol => screenerState.incrementalResults.bySymbol[symbol]);
+  return null;
+}
+
 function getLocalScreenerPage_(page) {
-  if (!screenerState.completeResults) return null;
+  const localRows = getScreenerLocalRows_();
+  if (!localRows) return null;
   const sorted = sortScreenerListRows_(
-    screenerState.completeResults.items,
+    localRows,
     screenerState.sortField,
     screenerState.sortDirection
   );
@@ -529,7 +572,7 @@ function getScreenerResultsPage_(page) {
 }
 
 function prefetchAdjacentScreenerPages_(pageData) {
-  if (screenerState.completeResults || screenerState.completeResultsDisabled || !screenerState.job || !pageData) return;
+  if (screenerState.completeResults || screenerState.incrementalResults || screenerState.completeResultsDisabled || !screenerState.job || !pageData) return;
   const page = Number(pageData.page || 1);
   const totalPages = Math.max(1, Number(pageData.totalPages || 1));
   [page - 1, page + 1].filter(candidate => candidate >= 1 && candidate <= totalPages)
@@ -585,12 +628,13 @@ function stopScreenerPolling_() {
   screenerState.requestEpoch += 1;
 }
 
-function scheduleScreenerPoll_(epoch) {
+function scheduleScreenerPoll_(epoch, delayMs) {
   if (screenerState.pollTimer !== null || !screenerState.job || isScreenerJobTerminal_(screenerState.job)) return;
+  delayMs = Math.max(0, Number(delayMs === undefined ? SCREENER_SUCCESS_POLL_MS : delayMs));
   screenerState.pollTimer = setTimeout(() => {
     screenerState.pollTimer = null;
     pollScreenerJob_(epoch);
-  }, 5000);
+  }, delayMs);
 }
 
 async function loadScreenerResults_(page, epoch, pageRequestId) {
@@ -619,7 +663,8 @@ async function pollScreenerJob_(epoch) {
     syncScreenerRunButton_();
     renderScreenerProgress_(job);
     const acceptedCompleteResults = acceptScreenerCompleteResults_(job, job.results);
-    if (acceptedCompleteResults) {
+    const acceptedBatchResults = !acceptedCompleteResults && acceptScreenerBatchResults_(job, job.batchResults);
+    if (acceptedCompleteResults || acceptedBatchResults) {
       renderLocalScreenerPage_(screenerState.page);
     } else if (!screenerState.pageLoading) {
       const pageRequestId = ++screenerState.pageRequestId;
@@ -649,7 +694,7 @@ async function pollScreenerJob_(epoch) {
     if (err && err.code === "AUTH") {
       stopScreenerPolling_();
       if (typeof showAuthRequired === "function") showAuthRequired();
-    } else scheduleScreenerPoll_(epoch);
+    } else scheduleScreenerPoll_(epoch, SCREENER_ERROR_POLL_MS);
   } finally {
     if (epoch === screenerState.requestEpoch) screenerState.pollInFlight = false;
   }
@@ -679,7 +724,8 @@ async function startScreenerRun_() {
     const activeEpoch = screenerState.requestEpoch;
     renderScreenerProgress_(response);
     const acceptedCompleteResults = acceptScreenerCompleteResults_(response, response.results);
-    if (acceptedCompleteResults) {
+    const acceptedBatchResults = !acceptedCompleteResults && acceptScreenerBatchResults_(response, response.batchResults);
+    if (acceptedCompleteResults || acceptedBatchResults) {
       renderLocalScreenerPage_(1);
     } else if (!response.results || response.results.allLoaded !== true) {
       renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
@@ -993,7 +1039,7 @@ function initApp() {
   [screenerSortField, screenerSortDirection].filter(Boolean).forEach(select => select.addEventListener("change", () => {
     screenerState.sortField = screenerSortField ? screenerSortField.value : "volume";
     screenerState.sortDirection = screenerSortDirection ? screenerSortDirection.value : "desc";
-    if (screenerState.completeResults) renderLocalScreenerPage_(1);
+    if (screenerState.completeResults || screenerState.incrementalResults) renderLocalScreenerPage_(1);
     else if (screenerState.job) changeScreenerResultsPage_(1);
   }));
   const refreshScreenerDaily = document.getElementById("btnRefreshScreenerDaily");

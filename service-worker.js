@@ -10,16 +10,16 @@
 //
 // 發版檢查清單：每次靜態檔變更都要 bump CACHE_VERSION；純前端 hotfix 可在
 // APP_VERSION 後加 patch suffix，讓 activate 清掉舊快取、避免卡舊殼層。
-const CACHE_VERSION = "v11.25";
+const CACHE_VERSION = "v11.26";
 const CACHE_NAME = "stocklab-shell-" + CACHE_VERSION;
 const SHELL_ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=11.25",
-  "./js/config.js?v=11.25",
-  "./js/api.js?v=11.25",
-  "./js/indicator-explain.js?v=11.25",
-  "./js/app.js?v=11.25",
+  "./css/style.css?v=11.26",
+  "./js/config.js?v=11.26",
+  "./js/api.js?v=11.26",
+  "./js/indicator-explain.js?v=11.26",
+  "./js/app.js?v=11.26",
   "./icons/favicon.svg",
   "./manifest.json"
 ];
