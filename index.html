@@ -13,7 +13,7 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.28" />
+  <link rel="stylesheet" href="css/style.css?v=11.29" />
   <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -342,7 +342,7 @@
           <div class="panel-header">
             <div><h2 id="analysisTitle">線圖分析</h2></div>
             <div class="inline-form">
-              <input id="analysisSymbol" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 006208" />
+              <input id="analysisSymbol" type="text" inputmode="numeric" aria-label="股票代號" placeholder="輸入股票代號，例如 006208" />
               <button id="btnLoadAnalysis">查詢</button>
               <button id="btnRefreshAnalysis" type="button">重新整理</button>
             </div>
@@ -386,8 +386,8 @@
             </div>
           </div>
           <form id="admin-add-form" class="admin-add-form">
-            <input type="email" id="admin-add-email" placeholder="要授權的 Google email" required />
-            <select id="admin-add-role"><option value="user">user</option><option value="admin">admin</option></select>
+             <input type="email" id="admin-add-email" aria-label="要授權的 Google 電子郵件" placeholder="要授權的 Google email" required />
+             <select id="admin-add-role" aria-label="帳號角色"><option value="user">user</option><option value="admin">admin</option></select>
             <button type="submit">新增</button>
           </form>
           <div id="admin-status" class="admin-status" hidden></div>
@@ -416,7 +416,7 @@
         <button class="icon-button" type="button" data-action="close-screener-conditions" aria-label="關閉" title="關閉">×</button>
       </header>
       <div class="screener-catalog-tools">
-        <input id="screenerConditionSearch" type="search" placeholder="查詢條件…" autocomplete="off" />
+         <input id="screenerConditionSearch" type="search" aria-label="查詢選股條件" placeholder="查詢條件…" autocomplete="off" />
         <div id="screenerCategoryTabs" class="screener-category-tabs">
           <button type="button" class="active" data-screener-category="all">全部</button>
           <button type="button" data-screener-category="price">價量</button>
@@ -513,9 +513,9 @@
 
   <div id="toastRegion" class="toast-region" role="status" aria-live="polite"></div>
 
-  <script defer src="js/config.js?v=11.28"></script>
-  <script defer src="js/api.js?v=11.28"></script>
-  <script defer src="js/indicator-explain.js?v=11.28"></script>
-  <script defer src="js/app.js?v=11.28"></script>
+  <script defer src="js/config.js?v=11.29"></script>
+  <script defer src="js/api.js?v=11.29"></script>
+  <script defer src="js/indicator-explain.js?v=11.29"></script>
+  <script defer src="js/app.js?v=11.29"></script>
 </body>
 </html>

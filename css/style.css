@@ -231,7 +231,7 @@ h1, h2, h3 {
 .watch-actions { position: relative; display: flex; align-items: center; gap: 8px; }
 .icon-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; min-height: 42px; padding: 0; font-size: 18px; line-height: 1;
+  width: 44px; height: 44px; min-height: 44px; padding: 0; font-size: 18px; line-height: 1;
 }
 
 /* 變更欄位取消勾選的欄位：手機卡片模式的 td{display:flex} 會蓋掉瀏覽器預設的
@@ -243,7 +243,11 @@ h1, h2, h3 {
 .chart-legend-bar { display: flex; justify-content: flex-start; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
 .line-menu-wrap { position: relative; }
 /* 靠左展開（鉛筆在左，避免溢出）。 */
-.line-controls.column-menu { left: 0; right: auto; }
+.line-controls.column-menu {
+  left: 0; right: auto; margin: 0;
+  width: 240px; max-width: calc(100vw - 24px);
+  overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+}
 /* display 只在「未收合」時套用——否則會與 .column-menu[hidden]{display:none} 同特異性、
    因排在後面而蓋掉它，導致 hidden 屬性失效、選單永遠關不掉。 */
 .line-controls.column-menu:not([hidden]) { display: grid; gap: 8px; }
@@ -511,8 +515,11 @@ svg {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 34px;
-  padding: 7px 10px;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  min-width: 0;
+  padding: 4px 8px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
   color: var(--muted);
@@ -1450,13 +1457,19 @@ body.modal-open .explain-modal-body * {
   touch-action: manipulation;
 }
 
-.signal-chip:focus,
 .signal-chip:active,
-.explainable-chip:focus,
 .explainable-chip:active,
-.explainable-value:focus,
 .explainable-value:active {
   outline: none;
+}
+
+.signal-chip:focus-visible,
+.explainable-chip:focus-visible,
+.explainable-value:focus-visible,
+.dashboard-inline-explain:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .explainable-value,
@@ -3005,6 +3018,14 @@ body.mobile-sheet-open {
   }
 
   .stock-link {
-    min-height: 34px;
+    min-height: 44px;
+  }
+
+  .explainable-value,
+  .explainable-chip,
+  .signal-chip,
+  .dashboard-inline-explain {
+    min-height: 44px;
+    padding: 4px 2px;
   }
 }

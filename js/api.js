@@ -105,7 +105,7 @@ const Api = (() => {
     const requestParams = options.force ? Object.assign({}, params, { force: "1" }) : params;
     const key = requestKey(action, requestParams);
     if (inflightRequests.has(key)) return inflightRequests.get(key);
-    const promise = jsonp(action, requestParams).finally(() => inflightRequests.delete(key));
+    const promise = jsonp(action, requestParams, options).finally(() => inflightRequests.delete(key));
     inflightRequests.set(key, promise);
     return promise;
   }
@@ -159,10 +159,11 @@ const Api = (() => {
       let settled = false;
       // 後端 Apps Script 單次執行硬上限是 6 分鐘。前端逾時設在 350 秒（約 5.8 分），
       // 給重算類請求接近完整的後端預算，又不會在後端已死之後還空等。
+      const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 350000;
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error("API 逾時"));
-      }, 350000);
+      }, timeoutMs);
 
       let abortListener = null;
       function cleanup() {
@@ -247,14 +248,14 @@ const Api = (() => {
         conditions: JSON.stringify(conditions), sortField, sortDirection,
         includeBatch: includeBatch ? "1" : "0"
       }),
-    getScreenerStatus: (jobId) => getOnce("screenerStatus", { jobId }, { force: true }),
+    getScreenerStatus: (jobId) => getOnce("screenerStatus", { jobId }, { force: true, timeoutMs: 15000 }),
     getScreenerResults: (jobId, page = 1, sortField = "volume", sortDirection = "desc") =>
       getOnce("screenerResults", { jobId, page, sortField, sortDirection }, { force: true }),
     continueScreener: (jobId, includeAll = true) =>
-      jsonp("continueScreener", { jobId, includeAll: includeAll ? "1" : "0" }),
+      jsonp("continueScreener", { jobId, includeAll: includeAll ? "1" : "0" }, { timeoutMs: 60000 }),
     refreshScreenerData: (mode = "daily") => jsonp("refreshScreenerData", { mode }),
     getCandidates: () => getOnce("candidates"),
-    getMarketSummary: () => getOnce("marketSummary"),
+    getMarketSummary: () => getOnce("marketSummary", {}, { timeoutMs: 30000 }),
     getNotifications: (params = {}) => getOnce("notifications", params),
     getNotificationSummary: () => getOnce("notificationSummary"),
     markNotificationRead: (id) => jsonp("markNotificationRead", { id }),

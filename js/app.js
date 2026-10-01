@@ -164,11 +164,14 @@ const screenerState = {
   completeResults: null,
   incrementalResults: null,
   completeResultsDisabled: false,
+  consecutivePollFailures: 0,
+  reconnectRequired: false,
   requestEpoch: 0
 };
 
 const SCREENER_SUCCESS_POLL_MS = 500;
 const SCREENER_ERROR_POLL_MS = 5000;
+const SCREENER_MAX_POLL_FAILURES = 3;
 
 function getScreenerDefinition_(field) {
   return ((screenerState.meta && screenerState.meta.catalog) || []).find(item => item.field === field) || null;
@@ -290,9 +293,10 @@ function renderScreenerCatalog_() {
   const container = document.getElementById("screenerCatalogList");
   if (!container) return;
   const items = filterScreenerCatalog_((screenerState.meta && screenerState.meta.catalog) || [], screenerState.category, screenerState.search);
+  const categoryLabels = { basic: "市場", price: "價量", technical: "技術", fundamental: "基本", institution: "籌碼" };
   container.innerHTML = items.length ? items.map(item => {
     const unavailable = item.available === false;
-    return `<button type="button" class="screener-catalog-item${unavailable ? " is-unavailable" : ""}" data-screener-add-field="${escapeHtml(item.field)}" ${unavailable ? "disabled" : ""}><span><strong>${escapeHtml(item.label)}</strong><small>${unavailable ? "資料準備中" : escapeHtml(item.category || "")}</small></span><b>${unavailable ? "…" : "＋"}</b></button>`;
+    return `<button type="button" class="screener-catalog-item${unavailable ? " is-unavailable" : ""}" data-screener-add-field="${escapeHtml(item.field)}" ${unavailable ? "disabled" : ""}><span><strong>${escapeHtml(item.label)}</strong><small>${unavailable ? "資料準備中" : escapeHtml(categoryLabels[item.category] || "")}</small></span><b>${unavailable ? "…" : "＋"}</b></button>`;
   }).join("") : `<div class="candidate-empty">找不到符合的條件</div>`;
   const tabs = document.getElementById("screenerCategoryTabs");
   if (tabs) tabs.querySelectorAll("[data-screener-category]").forEach(button => button.classList.toggle("active", button.dataset.screenerCategory === screenerState.category));
@@ -327,7 +331,7 @@ async function loadScreener() {
     renderScreenerCatalog_();
     const dataState = screenerState.meta.data || {};
     if (!isScreenerDataTerminal_(dataState)) scheduleScreenerDataPoll_();
-    if (screenerState.job && !isScreenerJobTerminal_(screenerState.job)) scheduleScreenerPoll_(screenerState.requestEpoch);
+    if (screenerState.job && !isScreenerJobTerminal_(screenerState.job) && !screenerState.reconnectRequired) scheduleScreenerPoll_(screenerState.requestEpoch);
   } catch (err) {
     const status = document.getElementById("screenerMetaStatus");
     if (status) status.textContent = "選股資料狀態讀取失敗：" + err.message;
@@ -388,10 +392,11 @@ function syncScreenerRunButton_() {
   const button = document.getElementById("btnStartScreener");
   if (!button) return;
   const active = isScreenerRunActive_();
-  button.disabled = active;
-  button.textContent = active ? "選股中" : "開始選股";
-  button.classList.toggle("is-loading", active);
-  if (active) button.setAttribute("aria-busy", "true");
+  const reconnect = active && screenerState.reconnectRequired;
+  button.disabled = active && !reconnect;
+  button.textContent = reconnect ? "重試連線" : active ? "選股中" : "開始選股";
+  button.classList.toggle("is-loading", active && !reconnect);
+  if (active && !reconnect) button.setAttribute("aria-busy", "true");
   else button.removeAttribute("aria-busy");
 }
 
@@ -629,7 +634,7 @@ function stopScreenerPolling_() {
 }
 
 function scheduleScreenerPoll_(epoch, delayMs) {
-  if (screenerState.pollTimer !== null || !screenerState.job || isScreenerJobTerminal_(screenerState.job)) return;
+  if (screenerState.pollTimer !== null || !screenerState.job || screenerState.reconnectRequired || isScreenerJobTerminal_(screenerState.job)) return;
   delayMs = Math.max(0, Number(delayMs === undefined ? SCREENER_SUCCESS_POLL_MS : delayMs));
   screenerState.pollTimer = setTimeout(() => {
     screenerState.pollTimer = null;
@@ -651,7 +656,7 @@ async function loadScreenerResults_(page, epoch, pageRequestId) {
 }
 
 async function pollScreenerJob_(epoch) {
-  if (epoch !== screenerState.requestEpoch || !isScreenerRouteActive_() || !screenerState.job || screenerState.pollInFlight) return;
+  if (epoch !== screenerState.requestEpoch || !isScreenerRouteActive_() || !screenerState.job || screenerState.reconnectRequired || screenerState.pollInFlight) return;
   screenerState.pollInFlight = true;
   try {
     const job = await Api.continueScreener(
@@ -660,6 +665,8 @@ async function pollScreenerJob_(epoch) {
     );
     if (epoch !== screenerState.requestEpoch) return;
     screenerState.job = job;
+    screenerState.consecutivePollFailures = 0;
+    screenerState.reconnectRequired = false;
     syncScreenerRunButton_();
     renderScreenerProgress_(job);
     const acceptedCompleteResults = acceptScreenerCompleteResults_(job, job.results);
@@ -677,9 +684,11 @@ async function pollScreenerJob_(epoch) {
       try {
         const statusJob = await Api.getScreenerStatus(screenerState.job.jobId);
         if (epoch !== screenerState.requestEpoch) return;
+        screenerState.job = statusJob;
+        screenerState.consecutivePollFailures = 0;
+        screenerState.reconnectRequired = false;
+        syncScreenerRunButton_();
         if (isScreenerJobTerminal_(statusJob)) {
-          screenerState.job = statusJob;
-          syncScreenerRunButton_();
           renderScreenerProgress_(statusJob);
           if (statusJob.status === "COMPLETED") {
             screenerState.completeResultsDisabled = true;
@@ -688,22 +697,43 @@ async function pollScreenerJob_(epoch) {
           }
           return;
         }
+        renderScreenerProgress_(statusJob);
+        scheduleScreenerPoll_(epoch, SCREENER_ERROR_POLL_MS);
+        return;
       } catch (statusError) {}
     }
-    renderScreenerProgress_(screenerState.job, "選股續跑失敗，將稍後重試：" + err.message);
     if (err && err.code === "AUTH") {
+      renderScreenerProgress_(screenerState.job, "選股連線需要重新登入。");
       stopScreenerPolling_();
       if (typeof showAuthRequired === "function") showAuthRequired();
-    } else scheduleScreenerPoll_(epoch, SCREENER_ERROR_POLL_MS);
+    } else {
+      screenerState.consecutivePollFailures += 1;
+      if (screenerState.consecutivePollFailures >= SCREENER_MAX_POLL_FAILURES) {
+        screenerState.reconnectRequired = true;
+        syncScreenerRunButton_();
+        renderScreenerProgress_(screenerState.job, "連線中斷；已保留目前結果。按「重試連線」查詢原選股工作。");
+      } else {
+        renderScreenerProgress_(screenerState.job, "選股連線暫時失敗，將稍後重試：" + err.message);
+        scheduleScreenerPoll_(epoch, SCREENER_ERROR_POLL_MS);
+      }
+    }
   } finally {
     if (epoch === screenerState.requestEpoch) screenerState.pollInFlight = false;
   }
 }
 
 async function startScreenerRun_() {
+  if (screenerState.reconnectRequired && screenerState.job && !isScreenerJobTerminal_(screenerState.job)) {
+    screenerState.reconnectRequired = false;
+    screenerState.consecutivePollFailures = 0;
+    syncScreenerRunButton_();
+    return pollScreenerJob_(screenerState.requestEpoch);
+  }
   if (isScreenerRunActive_()) return null;
   stopScreenerPolling_();
   clearScreenerCompleteResults_();
+  screenerState.consecutivePollFailures = 0;
+  screenerState.reconnectRequired = false;
   const epoch = screenerState.requestEpoch;
   screenerState.startInFlight = true;
   screenerState.pageCache.clear();
@@ -1012,6 +1042,10 @@ function initApp() {
 
   renderAnalysisLineControls();
   document.getElementById("analysisLineControls").addEventListener("change", onAnalysisLineToggle);
+  window.addEventListener("resize", () => {
+    const menu = document.getElementById("analysisLineControls");
+    if (menu && !menu.hidden) positionAnalysisLineMenu_();
+  });
 
   document.getElementById("candidateSort").addEventListener("change", () => {
     renderCandidates(currentCandidateData);
@@ -1870,6 +1904,22 @@ async function onSubmitWatchlist(event) {
   }
 }
 
+function positionAnalysisLineMenu_() {
+  const menu = document.getElementById("analysisLineControls");
+  const button = document.getElementById("btnAnalysisLines");
+  if (!menu || !button || menu.hidden) return;
+  const anchor = button.getBoundingClientRect();
+  const sidebar = document.querySelector(".sidebar");
+  const sidebarTop = sidebar && getComputedStyle(sidebar).position === "fixed"
+    ? sidebar.getBoundingClientRect().top : window.innerHeight;
+  const spaceAbove = Math.max(0, anchor.top - 16);
+  const spaceBelow = Math.max(0, Math.min(window.innerHeight, sidebarTop) - anchor.bottom - 16);
+  const above = spaceAbove > spaceBelow;
+  menu.style.top = above ? "auto" : "calc(100% + 8px)";
+  menu.style.bottom = above ? "calc(100% + 8px)" : "auto";
+  menu.style.maxHeight = Math.max(80, Math.min(480, above ? spaceAbove : spaceBelow)) + "px";
+}
+
 async function onDocumentClick(event) {
   const watchColumnMenuEl = document.getElementById("watchColumnMenu");
   if (watchColumnMenuEl && !watchColumnMenuEl.hidden && !event.target.closest("#watchColumnMenu") && !event.target.closest("#btnWatchColumns")) {
@@ -1884,7 +1934,10 @@ async function onDocumentClick(event) {
     return;
   }
   if (event.target.closest("#btnAnalysisLines")) {
-    if (analysisLineMenuEl) analysisLineMenuEl.hidden = !analysisLineMenuEl.hidden;
+    if (analysisLineMenuEl) {
+      analysisLineMenuEl.hidden = !analysisLineMenuEl.hidden;
+      if (!analysisLineMenuEl.hidden) positionAnalysisLineMenu_();
+    }
     return;
   }
   if (event.target.closest('[data-action="logout"]')) {
@@ -3840,10 +3893,10 @@ const paginationState = {
 async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder) {
   const cached = pageDataCache[cacheKey];
   // 切頁 90 秒內回到同一頁：記憶體已有新鮮資料就直接呈現、不重打後端。
-  if (cached && isPageDataFresh_(cacheKey)) {
+  if (cached && !cached.stale && isPageDataFresh_(cacheKey)) {
     renderFn(cached, { stale: false });
     setApiStatus("v11 資料已更新");
-    return;
+    return cached;
   }
   if (cached) renderFn(cached, { stale: true });
   else renderV11Loading(cacheKey);
@@ -3852,16 +3905,20 @@ async function loadV11PageWithCache(cacheKey, fetcher, renderFn, fallbackBuilder
     const data = await fetcher();
     pageDataCache[cacheKey] = data;
     markPageDataFetched_(cacheKey);
-    if (!cached || !sameCachedVersion(cached, data)) renderFn(data, { stale: false });
+    if (!cached || !sameCachedVersion(cached, data) || Boolean(cached.stale) !== Boolean(data.stale)) {
+      renderFn(data, { stale: Boolean(data.stale) });
+    }
     setApiStatus("v11 資料已更新");
+    return data;
   } catch (err) {
     if (cached) {
       setApiStatus("v11 API 暫時失敗，已顯示快取：" + err.message);
-      return;
+      return cached;
     }
     const fallback = typeof fallbackBuilder === "function" ? fallbackBuilder(err) : { ok: false, message: err.message };
     renderFn(fallback, { stale: false, error: err });
     setApiStatus("v11 API 尚未可用：" + err.message);
+    return fallback;
   }
 }
 
@@ -3880,11 +3937,36 @@ function renderV11Loading(cacheKey) {
   if (target) target.innerHTML = Array.from({ length: 3 }).map(() => '<div class="v11-card skeleton-card"></div>').join("");
 }
 
-function loadMarketSummary() {
-  return loadV11PageWithCache("marketSummary", () => Api.getMarketSummary(), renderMarketSummary, () => ({ ok: false, summaryText: "等待後端 v11 marketSummary 部署" }));
+let marketSummaryRetryTimer = null;
+let marketSummaryRetryCount = 0;
+async function loadMarketSummary(retry = false) {
+  if (!retry) marketSummaryRetryCount = 0;
+  if (marketSummaryRetryTimer !== null) clearTimeout(marketSummaryRetryTimer);
+  marketSummaryRetryTimer = null;
+  const data = await loadV11PageWithCache("marketSummary", () => Api.getMarketSummary(), renderMarketSummary, () => ({ ok: false, summaryText: "市場摘要暫時無法取得" }));
+  if (data && data.stale && (data.pending || marketSummaryRetryCount < 4) &&
+      resolvePageName(String(window.location.hash || "").replace(/^#/, "")) === "market") {
+    marketSummaryRetryCount += 1;
+    const retryDelay = data.pending
+      ? Math.min(300000, 30000 * Math.pow(2, Math.min(4, marketSummaryRetryCount - 1)))
+      : 30000;
+    marketSummaryRetryTimer = setTimeout(() => {
+      marketSummaryRetryTimer = null;
+      if (resolvePageName(String(window.location.hash || "").replace(/^#/, "")) === "market") {
+        loadMarketSummary(true);
+      }
+    }, retryDelay);
+  }
+  return data;
 }
 
 function renderMarketSummary(data) {
+  if (data.pending) {
+    document.getElementById("marketSummaryCards").innerHTML = "";
+    document.getElementById("marketSummaryBody").innerHTML =
+      '<div class="v11-card"><strong>市場摘要正在背景建立</strong><p>資料就緒後會自動顯示。</p></div>';
+    return;
+  }
   const taiex = data.taiex || {};
   const breadth = data.breadth || {};
   const watch = data.watchlistMarket || {};
@@ -3898,6 +3980,7 @@ function renderMarketSummary(data) {
     summaryCard("關注均分", explainableButton("TECH_SCORE", number(watch.avgScore), "MARKET_AVERAGE"), "")
   ].join("");
   document.getElementById("marketSummaryBody").innerHTML = `
+    ${data.dataDate ? `<p class="muted">資料日 ${escapeHtml(data.dataDate)}${data.stale ? " · 正在更新" : ""}</p>` : ""}
     <div class="v11-card"><strong>${escapeHtml(data.summaryText || "尚無市場摘要")}</strong><p>${escapeHtml(data.riskText || "")}</p></div>
     <div class="v11-grid compact">
       <div class="v11-card key-value"><span>TAIEX MA20 / MA60</span><strong>${explainableButton("MA20", number(taiex.ma20), "TAIEX")} / ${explainableButton("MA60", number(taiex.ma60), "TAIEX")}</strong></div>
