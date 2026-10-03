@@ -1,0 +1,77 @@
+/* Presentation only: the original desktop styles and data remain authoritative. */
+.mobile-header-date, .mobile-condition-toggle, .mobile-notification-icon { display: none; }
+@media (max-width: 650px) {
+  html { font-size: 16px; }
+  body { font-size: 16px; }
+  .main { padding: 16px 12px calc(92px + env(safe-area-inset-bottom)); }
+  .topbar { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin-bottom: 18px; }
+  .topbar > div:first-child { flex: 1; min-width: 0; }
+  .topbar h1 { font-size: 24px; margin: 0 0 5px; }
+  #pageSubtitle, .mobile-date-ready #dashboardUpdateStatus:not(.warning) { display: none; }
+  #dashboardUpdateStatus.warning { font-size: 12px; padding: 6px 8px; line-height: 1.4; }
+  .mobile-header-date { display: block; font-size: 14px; color: var(--muted); }
+  .top-actions { display: flex; flex-direction: column; width: auto; flex: 0 0 auto; gap: 5px; }
+  .top-actions > button:not(#btnNotificationCenter) { display: none; }
+  .top-actions #btnNotificationCenter { font-size: 0; width: 48px; min-width: 48px; min-height: 48px; padding: 6px; position: relative; }
+  .mobile-notification-icon { display: inline-block; width: 24px; height: 24px; }
+  #notificationUnreadCount { position: absolute; top: -4px; right: -4px; font-size: 12px; }
+  #apiStatus { max-width: 140px; font-size: 12px; overflow-wrap: anywhere; }
+  #apiStatus.mobile-routine-status { display: none; }
+  .sidebar { padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+  .sidebar > .sidebar-logout-btn { display: none; }
+  .nav { gap: 2px; }
+  .nav .nav-btn { min-height: 48px; font-size: 12px; padding: 6px 1px; border-radius: 10px; }
+  .panel { padding: 14px; margin-bottom: 16px; }
+  .panel h2 { font-size: 20px; }
+  .panel-header { gap: 10px; margin-bottom: 12px; }
+  #candidateSummary, #portfolioSummary, #marketCards, #indicatorCards, #marketSummaryCards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  #candidateSummary > :nth-child(n+3) { display: none; }
+  #candidateSummary > *, #portfolioSummary > *, #marketCards > *, #indicatorCards > *, #marketSummaryCards > * { min-width: 0; padding: 12px; overflow-wrap: anywhere; }
+  #candidateSummary .card-value, #portfolioSummary .card-value { font-size: 24px; }
+  #portfolioSummary .card-title, #candidateSummary .card-title { font-size: 13px; }
+  #portfolioSummary .card-value, #candidateSummary .card-value { margin-top: 4px; }
+  #marketSummaryCards .card-value { font-size: 24px; }
+  #marketCards .dashboard-metric-card { min-height: 0; }
+  .market-narrative .reason-chip-explain { min-height: 44px; }
+  .candidate-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: 10px; }
+  .candidate-actions label { min-width: 0; width: auto; font-size: 13px; }
+  .candidate-actions select { width: 100%; min-width: 0; font-size: 14px; }
+  tr.mobile-compact-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 10px; padding: 10px 12px; margin: 0 0 12px; }
+  #portfolioBody tr.mobile-compact-row, tr.mobile-compact-row.mobile-expanded { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  tr.mobile-compact-row > td { width: auto; min-width: 0; max-width: 100%; padding: 4px 0; border: 0; font-size: 15px; overflow-wrap: anywhere; white-space: normal; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  tr.mobile-compact-row > td::before { width: auto; min-width: 0; font-size: 12px; font-weight: normal; }
+  tr.mobile-compact-row > td[data-label="股票"] { grid-column: 1 / -1; }
+  tr.mobile-compact-row > td[data-label="股票"]::before { display: none; }
+  tr.mobile-compact-row .stock-link { white-space: normal; text-align: left; width: auto; min-height: 44px; font-size: 16px; }
+  tr.mobile-compact-row > td.mobile-row-secondary { display: none; }
+  #watchlistBody tr.mobile-compact-row > td.mobile-row-secondary { display: none; }
+  tr.mobile-compact-row.mobile-expanded > td.mobile-row-secondary { display: flex; }
+  #watchlistBody tr.mobile-compact-row.mobile-expanded > td.mobile-row-secondary { display: flex; }
+  tr.mobile-compact-row.mobile-expanded > td[data-label="符合原因"],
+  tr.mobile-compact-row.mobile-expanded > td[data-label="建議"],
+  tr.mobile-compact-row.mobile-expanded > td[data-label="訊號"],
+  tr.mobile-compact-row.mobile-expanded > td[data-label="迷你線圖"],
+  tr.mobile-compact-row.mobile-expanded > td[data-label="操作"] { grid-column: 1 / -1; }
+  tr.mobile-compact-row > td.mobile-row-details { grid-column: 1 / -1; border-top: 1px solid var(--border); margin-top: 5px; }
+  tr.mobile-compact-row > td.mobile-row-details::before { display: none; }
+  .mobile-row-details button { width: 100%; min-height: 44px; font-size: 14px; background: transparent; }
+  .mobile-compact-row td button, .mobile-compact-row td summary { min-height: 44px; }
+  .mobile-compact-row .explainable-value { font-size: 15px; }
+  .mobile-more-panel { border-radius: 20px 20px 0 0; padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .mobile-more-links button { font-size: 15px; overflow-wrap: anywhere; }
+  .mobile-more-links [data-action="logout"] { grid-column: 1 / -1; }
+  .mobile-condition-toggle { display: inline-flex; align-items: center; min-height: 44px; padding: 6px 10px; font-size: 14px; }
+  .screener-builder .panel-header > div { display: none; }
+  .screener-builder .panel-header { flex-direction: row; flex-wrap: wrap; }
+  .screener-builder .panel-header button { flex: 1; white-space: nowrap; }
+  .screener-run-bar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .screener-run-bar label { display: flex; flex-direction: column; min-width: 0; gap: 5px; font-size: 13px; }
+  .screener-run-bar select { width: 100%; min-width: 0; }
+  .screener-logic-badge, #btnStartScreener { grid-column: 1 / -1; }
+  .screener-logic-badge { justify-self: start; }
+  .screener-builder.mobile-conditions-collapsed #screenerConditionBar,
+  .screener-builder.mobile-conditions-collapsed .screener-run-bar > :not(#btnStartScreener) { display: none; }
+  .screener-results-panel { scroll-margin-top: 12px; }
+  .screener-toolbar-actions { display: none; }
+  .screener-empty-condition { padding: 12px; font-size: 14px; }
+}
