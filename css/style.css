@@ -2450,6 +2450,80 @@ button.dashboard-metric-card {
   color: var(--muted);
 }
 
+.screener-enum-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  text-align: left;
+}
+.screener-enum-toggle > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.screener-enum-popover {
+  position: fixed;
+  z-index: 1400;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  border-radius: 12px;
+  background: #0f172a;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.screener-enum-popover label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.screener-enum-popover input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; }
+.screener-enum-popover label:hover { background: rgba(56, 189, 248, 0.12); border-radius: 8px; }
+.screener-results-table th { padding: 6px 8px; }
+.screener-results-table th button {
+  padding: 6px 4px;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+}
+.screener-results-table th[aria-sort="ascending"],
+.screener-results-table th[aria-sort="descending"] { color: var(--blue); }
+.screener-enum-toggle:focus-visible,
+.screener-enum-popover input:focus-visible,
+.screener-results-table th button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+@media (max-width: 650px) {
+  .screener-results-table #screenerResultHead {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    margin-bottom: 12px;
+  }
+  .screener-results-table #screenerResultHead > tr {
+    display: flex;
+    width: max-content;
+    gap: 4px;
+    padding: 2px;
+    border: 0;
+    margin: 0;
+    background: transparent;
+  }
+  .screener-results-table #screenerResultHead th { flex: 0 0 auto; padding: 0; }
+  .screener-results-table #screenerResultHead th:last-child { display: none; }
+  .screener-results-table #screenerResultHead button { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+}
+
 .screener-and-separator,
 .screener-logic-badge {
   align-self: center;

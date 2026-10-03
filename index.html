@@ -13,8 +13,8 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.29" />
-  <link rel="stylesheet" href="css/mobile.css?v=11.29-mobile1" />
+  <link rel="stylesheet" href="css/style.css?v=11.29-mobile2" />
+  <link rel="stylesheet" href="css/mobile.css?v=11.29-mobile2" />
   <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -246,19 +246,6 @@
           </div>
           <div id="screenerConditionBar" class="screener-condition-bar"></div>
           <div class="screener-run-bar">
-            <span class="screener-logic-badge">AND</span>
-            <label>排序
-              <select id="screenerSortField">
-                <option value="volume">成交量</option>
-                <option value="changePercent">漲跌幅</option>
-                <option value="close">股價</option>
-                <option value="peRatio">本益比</option>
-                <option value="rsi14">RSI14</option>
-              </select>
-            </label>
-            <label>方向
-              <select id="screenerSortDirection"><option value="desc">高到低</option><option value="asc">低到高</option></select>
-            </label>
             <button id="btnStartScreener" type="button">開始選股</button>
           </div>
         </div>
@@ -271,7 +258,17 @@
           </div>
           <div class="table-wrap">
             <table class="screener-results-table">
-              <thead id="screenerResultHead"><tr><th>股票</th><th>市場</th><th>產業</th><th>收盤價</th><th>漲跌幅</th><th>成交量</th><th>本益比</th><th>RSI</th><th>操作</th></tr></thead>
+              <thead id="screenerResultHead"><tr>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="symbol" title="依股票代號排序">股票 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="market">市場 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="industry">產業 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="close">收盤價 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="changePercent">漲跌幅 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="descending"><button type="button" data-screener-sort="volume">成交量 <span class="screener-sort-arrow" aria-hidden="true">↓</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="peRatio">本益比 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="rsi14">RSI <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col">操作</th>
+              </tr></thead>
               <tbody id="screenerResultBody"><tr><td colspan="9" class="candidate-empty">尚未執行選股</td></tr></tbody>
             </table>
           </div>
@@ -517,7 +514,7 @@
   <script defer src="js/config.js?v=11.29"></script>
   <script defer src="js/api.js?v=11.29"></script>
   <script defer src="js/indicator-explain.js?v=11.29"></script>
-  <script defer src="js/app.js?v=11.29"></script>
-  <script defer src="js/mobile-ui.js?v=11.29-mobile1"></script>
+  <script defer src="js/app.js?v=11.29-mobile2"></script>
+  <script defer src="js/mobile-ui.js?v=11.29-mobile2"></script>
 </body>
 </html>

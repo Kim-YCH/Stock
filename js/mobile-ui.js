@@ -69,8 +69,7 @@
     if (!toggle) {
       toggle = document.createElement('button'); toggle.id = 'mobileConditionToggle'; toggle.type = 'button';
       toggle.className = 'mobile-condition-toggle'; toggle.setAttribute('aria-expanded', 'true');
-      toggle.setAttribute('aria-controls', 'screenerConditionBar mobileScreenerSort');
-      document.querySelector('.screener-run-bar').id = 'mobileScreenerSort';
+      toggle.setAttribute('aria-controls', 'screenerConditionBar');
       document.querySelector('.screener-builder .panel-header').prepend(toggle);
     }
     const count = byId('screenerConditionBar').querySelectorAll('.screener-condition-card').length;
@@ -84,7 +83,7 @@
     // Validation/transport failures return the original button to idle without new rows.
     // Do not let a later sort or page change consume an unsuccessful query's intent.
     if (awaitingResults && !byId('btnStartScreener').disabled) awaitingResults = false;
-    setText(toggle, '條件與排序（' + count + '）' + (toggle.getAttribute('aria-expanded') === 'true' ? ' ▴' : ' ▾'));
+    setText(toggle, '條件（' + count + '）' + (toggle.getAttribute('aria-expanded') === 'true' ? ' ▴' : ' ▾'));
     resultChanged = false;
   }
   function enhanceMore() {
@@ -115,7 +114,6 @@
   function restore() {
     document.querySelectorAll('.mobile-row-details, #mobileHeaderDate, #mobileConditionToggle, .mobile-notification-icon, [data-mobile-tool], [data-mobile-added]').forEach(el => el.remove());
     document.querySelectorAll('.mobile-compact-row, .mobile-expanded, .mobile-row-secondary, .mobile-date-ready, .mobile-routine-status, .mobile-conditions-collapsed').forEach(el => el.classList.remove('mobile-compact-row', 'mobile-expanded', 'mobile-row-secondary', 'mobile-date-ready', 'mobile-routine-status', 'mobile-conditions-collapsed'));
-    document.querySelector('.screener-run-bar')?.removeAttribute('id');
     if (!byId('mobileMoreSheet').hidden) window.closeMobileMore?.();
     awaitingResults = false; previousTitle = ''; sheetWasOpen = false;
   }

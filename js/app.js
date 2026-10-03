@@ -152,6 +152,7 @@ const screenerState = {
   page: 1,
   sortField: "volume",
   sortDirection: "desc",
+  renderedSort: null,
   category: "all",
   search: "",
   pollTimer: null,
@@ -250,13 +251,62 @@ function filterScreenerCatalog_(catalog, category, search) {
   });
 }
 
+let screenerEnumTrigger = null;
+
+function screenerEnumSummary_(condition) {
+  const values = (Array.isArray(condition.value) ? condition.value : []).filter(Boolean);
+  if (!values.length) return "請選擇";
+  const summary = values.join("、");
+  return values.length > 2 || summary.length > 24 ? `已選 ${values.length} 項` : summary;
+}
+
+function closeScreenerEnum_(restoreFocus = false) {
+  document.getElementById("screenerEnumPopover")?.remove();
+  const trigger = screenerEnumTrigger;
+  screenerEnumTrigger = null;
+  if (trigger) {
+    trigger.setAttribute("aria-expanded", "false");
+    if (restoreFocus && trigger.isConnected) trigger.focus();
+  }
+}
+
+function toggleScreenerEnum_(trigger) {
+  const wasOpen = screenerEnumTrigger === trigger;
+  closeScreenerEnum_();
+  if (wasOpen) return;
+  const index = Number(trigger.dataset.screenerEnumToggle);
+  const condition = screenerState.conditions[index];
+  const definition = condition && getScreenerDefinition_(condition.field);
+  if (!definition || definition.type !== "enum") return;
+  const panel = document.createElement("div");
+  panel.id = "screenerEnumPopover";
+  panel.className = "screener-enum-popover";
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", definition.label + "複選選項");
+  panel.innerHTML = (definition.values || []).map(option => {
+    const checked = Array.isArray(condition.value) && condition.value.map(String).includes(String(option));
+    return `<label><input type="checkbox" data-screener-enum-index="${index}" value="${escapeHtml(option)}" ${checked ? "checked" : ""} /><span>${escapeHtml(option)}</span></label>`;
+  }).join("");
+  panel.addEventListener("change", onScreenerConditionInput_);
+  document.body.append(panel);
+  screenerEnumTrigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  const rect = trigger.getBoundingClientRect();
+  const width = Math.min(Math.max(rect.width, 230), window.innerWidth - 24);
+  const below = window.innerHeight - rect.bottom - 20;
+  const above = rect.top - 20;
+  const openAbove = below < 160 && above > below;
+  panel.style.width = width + "px";
+  panel.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)) + "px";
+  panel.style.maxHeight = Math.max(44, Math.min(320, openAbove ? above : below)) + "px";
+  panel.style.top = (openAbove ? rect.top - panel.getBoundingClientRect().height - 6 : rect.bottom + 6) + "px";
+  panel.querySelector("input")?.focus();
+}
+
 function renderScreenerConditionValue_(condition, definition, index) {
   if (definition.type === "relation") return `<span class="screener-relation-value">成立</span>`;
   if (definition.type === "enum") {
-    return `<div class="screener-enum-options">${(definition.values || []).map(option => {
-      const checked = Array.isArray(condition.value) && condition.value.map(String).includes(String(option));
-      return `<label><input type="checkbox" data-screener-enum-index="${index}" value="${escapeHtml(option)}" ${checked ? "checked" : ""} />${escapeHtml(option)}</label>`;
-    }).join("")}</div>`;
+    return `<button type="button" class="screener-enum-toggle" data-screener-enum-toggle="${index}" aria-label="${escapeHtml(definition.label + "複選：" + screenerEnumSummary_(condition))}" aria-haspopup="dialog" aria-controls="screenerEnumPopover" aria-expanded="false"><span>${escapeHtml(screenerEnumSummary_(condition))}</span><span aria-hidden="true">▾</span></button>`;
   }
   if (condition.op === "between") {
     const values = Array.isArray(condition.value) ? condition.value : ["", ""];
@@ -271,6 +321,7 @@ function shouldRenderScreenerOperator_(definition) {
 }
 
 function renderScreenerConditions_() {
+  closeScreenerEnum_();
   const container = document.getElementById("screenerConditionBar");
   if (!container) return;
   if (!screenerState.conditions.length) {
@@ -339,6 +390,7 @@ async function loadScreener() {
 }
 
 function openScreenerConditionSheet_() {
+  closeScreenerEnum_();
   renderScreenerCatalog_();
   const sheet = document.getElementById("screenerConditionSheet");
   if (sheet) sheet.hidden = false;
@@ -374,6 +426,12 @@ function onScreenerConditionInput_(event) {
     const index = Number(enumInput.dataset.screenerEnumIndex);
     const selected = Array.from(document.querySelectorAll(`[data-screener-enum-index="${index}"]:checked`)).map(input => input.value);
     if (screenerState.conditions[index]) screenerState.conditions[index].value = selected;
+    if (screenerEnumTrigger) {
+      const condition = screenerState.conditions[index];
+      const summary = screenerEnumSummary_(condition);
+      screenerEnumTrigger.querySelector("span").textContent = summary;
+      screenerEnumTrigger.setAttribute("aria-label", getScreenerDefinition_(condition.field).label + "複選：" + summary);
+    }
   }
 }
 
@@ -439,11 +497,36 @@ function renderScreenerResults_(pageData) {
   pageData = pageData || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 };
   screenerState.items = pageData.items || [];
   screenerState.page = Number(pageData.page || 1);
+  screenerState.renderedSort = { sortField: screenerState.sortField, sortDirection: screenerState.sortDirection };
   const body = document.getElementById("screenerResultBody");
   const pagination = document.getElementById("screenerPagination");
   if (body) body.innerHTML = renderScreenerResultRows_(screenerState.items);
   if (pagination) pagination.innerHTML = renderScreenerPaginationHtml_(pageData);
+  syncScreenerSortHeaders_();
   prefetchAdjacentScreenerPages_(pageData);
+}
+
+function syncScreenerSortHeaders_() {
+  const head = document.getElementById("screenerResultHead");
+  if (!head) return;
+  // Announce the order of the displayed rows, not an unfulfilled network request.
+  const sort = screenerState.renderedSort || screenerState;
+  head.querySelectorAll("[data-screener-sort]").forEach(button => {
+    const active = button.dataset.screenerSort === sort.sortField;
+    button.closest("th").setAttribute("aria-sort", active ? (sort.sortDirection === "asc" ? "ascending" : "descending") : "none");
+    button.querySelector(".screener-sort-arrow").textContent = active ? (sort.sortDirection === "asc" ? "↑" : "↓") : "↕";
+  });
+}
+
+async function changeScreenerSort_(field) {
+  if (!["symbol", "market", "industry", "close", "changePercent", "volume", "peRatio", "rsi14"].includes(field)) return;
+  const textual = ["symbol", "market", "industry"].includes(field);
+  screenerState.sortDirection = field === screenerState.sortField
+    ? (screenerState.sortDirection === "asc" ? "desc" : "asc")
+    : (textual ? "asc" : "desc");
+  screenerState.sortField = field;
+  syncScreenerSortHeaders_();
+  if (screenerState.job || getScreenerLocalRows_()) await changeScreenerResultsPage_(1);
 }
 
 function clearScreenerIncrementalResults_() {
@@ -742,12 +825,9 @@ async function startScreenerRun_() {
   try {
     const conditions = serializeScreenerConditions_();
     if (!conditions.length) throw new Error("請至少加入一個選股條件");
-    const sortField = document.getElementById("screenerSortField");
-    const sortDirection = document.getElementById("screenerSortDirection");
-    screenerState.sortField = sortField ? sortField.value : "volume";
-    screenerState.sortDirection = sortDirection ? sortDirection.value : "desc";
     renderScreenerProgress_({ status: "QUEUED", progress: 0, scannedCount: 0, universeCount: 0, matchCount: 0 });
-    const response = await Api.startScreener(conditions, screenerState.sortField, screenerState.sortDirection);
+    const requestedSort = { field: screenerState.sortField, direction: screenerState.sortDirection };
+    const response = await Api.startScreener(conditions, requestedSort.field, requestedSort.direction);
     screenerState.job = response;
     syncScreenerRunButton_();
     if (!isScreenerRouteActive_()) return response;
@@ -757,6 +837,17 @@ async function startScreenerRun_() {
     const acceptedBatchResults = !acceptedCompleteResults && acceptScreenerBatchResults_(response, response.batchResults);
     if (acceptedCompleteResults || acceptedBatchResults) {
       renderLocalScreenerPage_(1);
+    } else if (requestedSort.field !== screenerState.sortField || requestedSort.direction !== screenerState.sortDirection) {
+      // A header may change while start is in flight. Its paged response has the old order.
+      const pageRequestId = ++screenerState.pageRequestId;
+      try {
+        await loadScreenerResults_(1, activeEpoch, pageRequestId);
+      } catch (err) {
+        if (pageRequestId === screenerState.pageRequestId && activeEpoch === screenerState.requestEpoch) {
+          renderScreenerProgress_(response, "載入結果失敗：" + err.message);
+          if (typeof showToast === "function") showToast("載入結果失敗：" + err.message, "error");
+        }
+      }
     } else if (!response.results || response.results.allLoaded !== true) {
       renderScreenerResults_(response.results || { items: [], page: 1, pageSize: 10, total: 0, totalPages: 1 });
     } else {
@@ -787,6 +878,7 @@ async function changeScreenerResultsPage_(page) {
   } catch (err) {
     if (pageRequestId === screenerState.pageRequestId) {
       renderScreenerProgress_(screenerState.job, "載入結果失敗：" + err.message);
+      if (typeof showToast === "function") showToast("載入結果失敗：" + err.message, "error");
     }
   } finally {
     if (pageRequestId === screenerState.pageRequestId) setScreenerPaginationBusy_(false);
@@ -1068,14 +1160,28 @@ function initApp() {
   });
   const startScreenerButton = document.getElementById("btnStartScreener");
   if (startScreenerButton) startScreenerButton.addEventListener("click", startScreenerRun_);
-  const screenerSortField = document.getElementById("screenerSortField");
-  const screenerSortDirection = document.getElementById("screenerSortDirection");
-  [screenerSortField, screenerSortDirection].filter(Boolean).forEach(select => select.addEventListener("change", () => {
-    screenerState.sortField = screenerSortField ? screenerSortField.value : "volume";
-    screenerState.sortDirection = screenerSortDirection ? screenerSortDirection.value : "desc";
-    if (screenerState.completeResults || screenerState.incrementalResults) renderLocalScreenerPage_(1);
-    else if (screenerState.job) changeScreenerResultsPage_(1);
-  }));
+  syncScreenerSortHeaders_();
+  document.getElementById("screenerResultHead")?.addEventListener("click", event => {
+    const button = event.target.closest("[data-screener-sort]");
+    if (button) changeScreenerSort_(button.dataset.screenerSort);
+  });
+  document.addEventListener("click", event => {
+    const trigger = event.target.closest("[data-screener-enum-toggle]");
+    if (trigger) toggleScreenerEnum_(trigger);
+    else if (!event.target.closest("#screenerEnumPopover")) closeScreenerEnum_();
+  });
+  document.addEventListener("focusin", event => {
+    if (screenerEnumTrigger && !event.target.closest("#screenerEnumPopover, [data-screener-enum-toggle]")) closeScreenerEnum_();
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && screenerEnumTrigger) {
+      event.preventDefault(); closeScreenerEnum_(true);
+    }
+  });
+  window.addEventListener("resize", () => closeScreenerEnum_());
+  window.addEventListener("scroll", event => {
+    if (!document.getElementById("screenerEnumPopover")?.contains(event.target)) closeScreenerEnum_();
+  }, true);
   const refreshScreenerDaily = document.getElementById("btnRefreshScreenerDaily");
   if (refreshScreenerDaily) refreshScreenerDaily.addEventListener("click", () => refreshScreenerData_("daily"));
   const bootstrapScreener = document.getElementById("btnBootstrapScreenerData");
@@ -2220,6 +2326,7 @@ function prefillSellQuantity(event) {
 }
 
 function changePage(pageName, options = {}) {
+  closeScreenerEnum_();
   const requestedPage = String(pageName || "dashboard").replace(/^#/, "");
   pageName = resolvePageName(requestedPage);
   if (pageName === "admin" && !(currentUser && currentUser.isAdmin)) pageName = "dashboard";

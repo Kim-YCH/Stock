@@ -64,11 +64,8 @@
   .screener-builder .panel-header > div { display: none; }
   .screener-builder .panel-header { flex-direction: row; flex-wrap: wrap; }
   .screener-builder .panel-header button { flex: 1; white-space: nowrap; }
-  .screener-run-bar { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .screener-run-bar label { display: flex; flex-direction: column; min-width: 0; gap: 5px; font-size: 13px; }
-  .screener-run-bar select { width: 100%; min-width: 0; }
-  .screener-logic-badge, #btnStartScreener { grid-column: 1 / -1; }
-  .screener-logic-badge { justify-self: start; }
+  .screener-run-bar { display: flex; }
+  #btnStartScreener { width: 100%; min-height: 44px; }
   .screener-builder.mobile-conditions-collapsed #screenerConditionBar,
   .screener-builder.mobile-conditions-collapsed .screener-run-bar > :not(#btnStartScreener) { display: none; }
   .screener-results-panel { scroll-margin-top: 12px; }
