@@ -3181,4 +3181,11 @@ body.mobile-sheet-open {
   #indicatorCards .num { font-variant-numeric: tabular-nums; }
   .portfolio-row-actions button { background: transparent; border-color: var(--border); font-size: 13px; }
   .portfolio-row-actions button:hover { background: var(--panel2); border-color: #39516e; }
+  .table-wrap th { background: #142138; color: #b7c8df; }
+  .table-wrap td { font-size: 14px; line-height: 1.5; }
+  .table-wrap th.numeric, .table-wrap td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+  th.numeric .table-sort-button, th.numeric [data-screener-sort] { justify-content: flex-end; }
+  .table-wrap tbody tr:nth-child(even) { background: rgba(148, 163, 184, .025); }
+  .table-wrap tbody tr:hover { background: rgba(56, 189, 248, .06); }
+  .table-wrap td.numeric .explainable-value { text-align: right; }
 }

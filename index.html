@@ -121,16 +121,16 @@
               <thead>
                 <tr>
                   <th aria-sort="none"><button class="table-sort-button" type="button" data-watch-sort="symbol">股票</button></th>
-                  <th aria-sort="none" data-col="changePercent"><button class="table-sort-button" type="button" data-watch-sort="changePercent">漲跌幅</button></th>
-                  <th aria-sort="none" data-col="totalScore"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
+                  <th aria-sort="none" data-col="changePercent" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="changePercent">漲跌幅</button></th>
+                  <th aria-sort="none" data-col="totalScore" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="totalScore">技術分數</button></th>
                   <th aria-sort="none" data-col="trendText"><button class="table-sort-button" type="button" data-watch-sort="trendText">狀態</button></th>
-                  <th aria-sort="none" data-col="rsi14"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
-                  <th aria-sort="none" data-col="adx14"><button class="table-sort-button" type="button" data-watch-sort="adx14">ADX</button></th>
-                  <th aria-sort="none" data-col="atrPercent"><button class="table-sort-button" type="button" data-watch-sort="atrPercent">ATR%</button></th>
-                  <th aria-sort="none" data-col="volumeRatio"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
-                  <th aria-sort="none" data-col="foreignNet"><button class="table-sort-button" type="button" data-watch-sort="foreignNet">外資</button></th>
-                  <th aria-sort="none" data-col="trustNet"><button class="table-sort-button" type="button" data-watch-sort="trustNet">投信</button></th>
-                  <th aria-sort="none" data-col="dealerNet"><button class="table-sort-button" type="button" data-watch-sort="dealerNet">自營商</button></th>
+                  <th aria-sort="none" data-col="rsi14" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="rsi14">RSI</button></th>
+                  <th aria-sort="none" data-col="adx14" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="adx14">ADX</button></th>
+                  <th aria-sort="none" data-col="atrPercent" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="atrPercent">ATR%</button></th>
+                  <th aria-sort="none" data-col="volumeRatio" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="volumeRatio">量比</button></th>
+                  <th aria-sort="none" data-col="foreignNet" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="foreignNet">外資</button></th>
+                  <th aria-sort="none" data-col="trustNet" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="trustNet">投信</button></th>
+                  <th aria-sort="none" data-col="dealerNet" class="numeric"><button class="table-sort-button" type="button" data-watch-sort="dealerNet">自營商</button></th>
                   <th aria-sort="none" data-col="signalSummary"><button class="table-sort-button" type="button" data-watch-sort="signalSummary">訊號</button></th>
                   <th data-col="sparkline">迷你線圖</th>
                   <th>操作</th>
@@ -180,12 +180,12 @@
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>收盤價</th>
-                  <th>RSI</th>
-                  <th>ADX</th>
-                  <th>ATR</th>
-                  <th>技術分數</th>
-                  <th>風險分數</th>
+                  <th class="numeric">收盤價</th>
+                  <th class="numeric">RSI</th>
+                  <th class="numeric">ADX</th>
+                  <th class="numeric">ATR</th>
+                  <th class="numeric">技術分數</th>
+                  <th class="numeric">風險分數</th>
                   <th>狀態</th>
                   <th>符合原因</th>
                   <th>建議</th>
@@ -207,12 +207,12 @@
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>收盤價</th>
-                  <th>RSI</th>
-                  <th>ADX</th>
-                  <th>ATR</th>
-                  <th>技術分數</th>
-                  <th>風險分數</th>
+                  <th class="numeric">收盤價</th>
+                  <th class="numeric">RSI</th>
+                  <th class="numeric">ADX</th>
+                  <th class="numeric">ATR</th>
+                  <th class="numeric">技術分數</th>
+                  <th class="numeric">風險分數</th>
                   <th>狀態</th>
                   <th>符合原因</th>
                   <th>建議</th>
@@ -262,11 +262,11 @@
                 <th scope="col" aria-sort="none"><button type="button" data-screener-sort="symbol" title="依股票代號排序">股票 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
                 <th scope="col" aria-sort="none"><button type="button" data-screener-sort="market">市場 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
                 <th scope="col" aria-sort="none"><button type="button" data-screener-sort="industry">產業 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
-                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="close">收盤價 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
-                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="changePercent">漲跌幅 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
-                <th scope="col" aria-sort="descending"><button type="button" data-screener-sort="volume">成交量 <span class="screener-sort-arrow" aria-hidden="true">↓</span></button></th>
-                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="peRatio">本益比 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
-                <th scope="col" aria-sort="none"><button type="button" data-screener-sort="rsi14">RSI <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none" class="numeric"><button type="button" data-screener-sort="close">收盤價 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none" class="numeric"><button type="button" data-screener-sort="changePercent">漲跌幅 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="descending" class="numeric"><button type="button" data-screener-sort="volume">成交量 <span class="screener-sort-arrow" aria-hidden="true">↓</span></button></th>
+                <th scope="col" aria-sort="none" class="numeric"><button type="button" data-screener-sort="peRatio">本益比 <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
+                <th scope="col" aria-sort="none" class="numeric"><button type="button" data-screener-sort="rsi14">RSI <span class="screener-sort-arrow" aria-hidden="true">↕</span></button></th>
                 <th scope="col">操作</th>
               </tr></thead>
               <tbody id="screenerResultBody"><tr><td colspan="9" class="candidate-empty">尚未執行選股</td></tr></tbody>
@@ -304,14 +304,14 @@
               <thead>
                 <tr>
                   <th>股票</th>
-                  <th>股數</th>
-                  <th>平均成本</th>
-                  <th>現價</th>
-                  <th>今日漲跌</th>
-                  <th>今日損益</th>
-                  <th>市值</th>
-                  <th>未實現損益</th>
-                  <th>累積報酬率</th>
+                  <th class="numeric">股數</th>
+                  <th class="numeric">平均成本</th>
+                  <th class="numeric">現價</th>
+                  <th class="numeric">今日漲跌</th>
+                  <th class="numeric">今日損益</th>
+                  <th class="numeric">市值</th>
+                  <th class="numeric">未實現損益</th>
+                  <th class="numeric">累積報酬率</th>
                   <th>技術狀態</th>
                   <th>操作</th>
                 </tr>
@@ -326,7 +326,7 @@
           <div class="disclosure-content">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>日期</th><th>類型</th><th>股票</th><th>股數</th><th>價格</th><th>手續費</th><th>稅</th><th>備註</th><th>操作</th></tr></thead>
+                <thead><tr><th>日期</th><th>類型</th><th>股票</th><th class="numeric">股數</th><th class="numeric">價格</th><th class="numeric">手續費</th><th class="numeric">稅</th><th>備註</th><th>操作</th></tr></thead>
                 <tbody id="transactionsBody"></tbody>
               </table>
             </div>

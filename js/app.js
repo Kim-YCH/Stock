@@ -475,11 +475,11 @@ function renderScreenerResultRows_(items) {
       <td data-label="股票"><div class="stock-cell"><strong>${escapeHtml(item.symbol || "")}</strong><small>${escapeHtml(item.name || "")}</small></div></td>
       <td data-label="市場">${escapeHtml(item.market || "--")}</td>
       <td data-label="產業">${escapeHtml(item.industry || "--")}</td>
-      <td data-label="收盤價">${escapeHtml(item.close === "" || item.close === undefined ? "--" : item.close)}</td>
-      <td data-label="漲跌幅" class="${changeClass}">${Number.isFinite(change) ? `${change > 0 ? "+" : ""}${change}%` : "--"}</td>
-      <td data-label="成交量">${Number.isFinite(Number(item.volume)) ? Number(item.volume).toLocaleString("zh-TW") : "--"}</td>
-      <td data-label="本益比">${escapeHtml(item.peRatio === "" || item.peRatio === undefined ? "--" : item.peRatio)}</td>
-      <td data-label="RSI">${escapeHtml(item.rsi14 === "" || item.rsi14 === undefined ? "--" : item.rsi14)}</td>
+      <td data-label="收盤價" class="numeric">${escapeHtml(item.close === "" || item.close === undefined ? "--" : item.close)}</td>
+      <td data-label="漲跌幅" class="numeric ${changeClass}">${Number.isFinite(change) ? `${change > 0 ? "+" : ""}${change}%` : "--"}</td>
+      <td data-label="成交量" class="numeric">${Number.isFinite(Number(item.volume)) ? Number(item.volume).toLocaleString("zh-TW") : "--"}</td>
+      <td data-label="本益比" class="numeric">${escapeHtml(item.peRatio === "" || item.peRatio === undefined ? "--" : item.peRatio)}</td>
+      <td data-label="RSI" class="numeric">${escapeHtml(item.rsi14 === "" || item.rsi14 === undefined ? "--" : item.rsi14)}</td>
       <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol || "")}">線圖</button><button type="button" data-action="add-screener-watchlist" data-symbol="${escapeHtml(item.symbol || "")}">加入自選</button></div></td>
     </tr>`;
   }).join("");
@@ -2522,12 +2522,12 @@ function renderCandidates(data) {
     ? buyItems.map(item => `
         <tr>
           <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
-          <td data-label="收盤價">${number(item.close)}</td>
-          <td data-label="RSI">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
-          <td data-label="ADX">${explainableButton("ADX", hasMetricValue(item.adx14) ? number(item.adx14) : "尚未計算", item.symbol)}</td>
-          <td data-label="ATR">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
-          <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
-          <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
+          <td data-label="收盤價" class="numeric">${number(item.close)}</td>
+          <td data-label="RSI" class="numeric">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
+          <td data-label="ADX" class="numeric">${explainableButton("ADX", hasMetricValue(item.adx14) ? number(item.adx14) : "尚未計算", item.symbol)}</td>
+          <td data-label="ATR" class="numeric">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
+          <td data-label="技術分數" class="numeric">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
+          <td data-label="風險分數" class="numeric">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
           <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
           <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
           <td data-label="建議">${escapeHtml(item.suggestion || "列入觀察")}</td>
@@ -2539,12 +2539,12 @@ function renderCandidates(data) {
     ? sellItems.map(item => `
           <tr>
             <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
-            <td data-label="收盤價">${number(item.close)}</td>
-            <td data-label="RSI">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
-            <td data-label="ADX">${explainableButton("ADX", hasMetricValue(item.adx14) ? number(item.adx14) : "尚未計算", item.symbol)}</td>
-            <td data-label="ATR">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
-            <td data-label="技術分數">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
-            <td data-label="風險分數">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
+            <td data-label="收盤價" class="numeric">${number(item.close)}</td>
+            <td data-label="RSI" class="numeric">${explainableButton("RSI", number(item.rsi14), item.symbol)}</td>
+            <td data-label="ADX" class="numeric">${explainableButton("ADX", hasMetricValue(item.adx14) ? number(item.adx14) : "尚未計算", item.symbol)}</td>
+            <td data-label="ATR" class="numeric">${explainableButton("ATR", hasMetricValue(item.atrPercent) ? `${number(formatAtrPercent(item.atrPercent))}%` : "尚未計算", item.symbol)}</td>
+            <td data-label="技術分數" class="numeric">${explainableButton("TECH_SCORE", number(item.totalScore), item.symbol, scoreClass(item.totalScore))}</td>
+            <td data-label="風險分數" class="numeric">${explainableButton("RISK_SCORE", number(item.riskScore), item.symbol)}</td>
             <td data-label="狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
             <td data-label="符合原因" class="candidate-reason">${renderCandidateReasons(item)}</td>
             <td data-label="建議">${escapeHtml(item.suggestion || "檢視持股")}</td>
@@ -2921,16 +2921,16 @@ function renderWatchlist(items) {
     return `
       <tr data-symbol="${safeSymbol}">
         <td data-label="股票"><div class="stock-cell">${renderStockLink(item.symbol, item.name)}<small>收盤 ${number(item.close)}</small></div></td>
-        <td data-label="漲跌幅" data-col="changePercent"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
-        <td data-label="技術分數" data-col="totalScore">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
+        <td data-label="漲跌幅" data-col="changePercent" class="numeric"><div class="daily-change ${changeClass}" title="${escapeHtml(changeTitle)}"><strong>${changePercent === null ? "-" : signedNumber(changePercent) + "%"}</strong><small>${priceChange === null ? "" : signedNumber(priceChange)}</small></div></td>
+        <td data-label="技術分數" data-col="totalScore" class="numeric">${explainableButton("TECH_SCORE", `<strong>${number(item.totalScore)}</strong>`, item.symbol, `score-value ${scoreClass(item.totalScore)}`)}</td>
         <td data-label="狀態" data-col="trendText">${explainableButton("TREND_TEXT", escapeHtml(statusText), item.symbol, `badge ${badgeClass}`)}</td>
-        <td data-label="RSI" data-col="rsi14">${explainableButton("RSI", `${number(item.rsi14)} ${rsiArrow}`, item.symbol, `indicator-value ${rsiDirectionClass(item.rsiDirection)}`)}</td>
-        <td data-label="ADX" data-col="adx14">${explainableButton("ADX", adxValue === null ? "-" : number(adxValue), item.symbol, `indicator-value ${adxClass(adxValue)}`)}</td>
-        <td data-label="ATR%" data-col="atrPercent">${explainableButton("ATR_PERCENT", atrValue === null ? "-" : number(atrValue) + "%", item.symbol, `indicator-value ${atrClass(atrValue)}`)}</td>
-        <td data-label="量比" data-col="volumeRatio">${explainableButton("VOLUME_RATIO", volumeValue === null ? "-" : number(volumeValue) + "x", item.symbol, `volume-ratio ${volumeRatioClass(volumeValue)}`)}</td>
-        <td data-label="外資" data-col="foreignNet" class="td-inst">${instNet(item.foreignNet)}</td>
-        <td data-label="投信" data-col="trustNet" class="td-inst">${instNet(item.trustNet)}</td>
-        <td data-label="自營商" data-col="dealerNet" class="td-inst">${instNet(item.dealerNet)}</td>
+        <td data-label="RSI" data-col="rsi14" class="numeric">${explainableButton("RSI", `${number(item.rsi14)} ${rsiArrow}`, item.symbol, `indicator-value ${rsiDirectionClass(item.rsiDirection)}`)}</td>
+        <td data-label="ADX" data-col="adx14" class="numeric">${explainableButton("ADX", adxValue === null ? "-" : number(adxValue), item.symbol, `indicator-value ${adxClass(adxValue)}`)}</td>
+        <td data-label="ATR%" data-col="atrPercent" class="numeric">${explainableButton("ATR_PERCENT", atrValue === null ? "-" : number(atrValue) + "%", item.symbol, `indicator-value ${atrClass(atrValue)}`)}</td>
+        <td data-label="量比" data-col="volumeRatio" class="numeric">${explainableButton("VOLUME_RATIO", volumeValue === null ? "-" : number(volumeValue) + "x", item.symbol, `volume-ratio ${volumeRatioClass(volumeValue)}`)}</td>
+        <td data-label="外資" data-col="foreignNet" class="numeric td-inst">${instNet(item.foreignNet)}</td>
+        <td data-label="投信" data-col="trustNet" class="numeric td-inst">${instNet(item.trustNet)}</td>
+        <td data-label="自營商" data-col="dealerNet" class="numeric td-inst">${instNet(item.dealerNet)}</td>
         <td data-label="訊號" data-col="signalSummary"><div class="signal-chips signal-chip-row">${renderSignalChips(signals, item.symbol)}</div></td>
         <td data-label="迷你線圖" data-col="sparkline" class="td-sparkline"><button class="sparkline-button" type="button" data-action="open-sparkline-stats" data-symbol="${safeSymbol}" title="${escapeHtml(sparkTitle)}">${sparkline(item.sparkline || [], "#38bdf8", 160, 36)}</button></td>
         <td data-label="操作"><button class="danger-btn" type="button" data-action="remove-watchlist" data-symbol="${safeSymbol}" data-name="${safeName}">移除</button></td>
@@ -3232,14 +3232,14 @@ function renderPortfolioData(data) {
     return `
       <tr>
         <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
-        <td data-label="股數">${number(item.quantity)}</td>
-        <td data-label="平均成本">${number(item.avgCost)}</td>
-        <td data-label="現價">${dashIfBlank(number(currentPrice))}</td>
-        <td data-label="今日漲跌" class="${dailyCls}">${hasPrevious ? `${Number(item.dailyChange) > 0 ? "+" : ""}${number(item.dailyChange)} (${Number(item.dailyChangePercent) > 0 ? "+" : ""}${number(item.dailyChangePercent)}%)` : "前日資料不足"}</td>
-        <td data-label="今日損益" class="${dailyCls}">${hasPrevious ? `${Number(item.dailyPnl) > 0 ? "+" : ""}${money(item.dailyPnl)}` : "-"}</td>
-        <td data-label="市值">${dashIfBlank(money(item.marketValue))}</td>
-        <td data-label="未實現損益" class="${pnlCls}">${dashIfBlank(money(item.unrealizedPnl))}</td>
-        <td data-label="累積報酬率" class="${pnlCls}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
+        <td data-label="股數" class="numeric">${number(item.quantity)}</td>
+        <td data-label="平均成本" class="numeric">${number(item.avgCost)}</td>
+        <td data-label="現價" class="numeric">${dashIfBlank(number(currentPrice))}</td>
+        <td data-label="今日漲跌" class="numeric ${dailyCls}">${hasPrevious ? `${Number(item.dailyChange) > 0 ? "+" : ""}${number(item.dailyChange)} (${Number(item.dailyChangePercent) > 0 ? "+" : ""}${number(item.dailyChangePercent)}%)` : "前日資料不足"}</td>
+        <td data-label="今日損益" class="numeric ${dailyCls}">${hasPrevious ? `${Number(item.dailyPnl) > 0 ? "+" : ""}${money(item.dailyPnl)}` : "-"}</td>
+        <td data-label="市值" class="numeric">${dashIfBlank(money(item.marketValue))}</td>
+        <td data-label="未實現損益" class="numeric ${pnlCls}">${dashIfBlank(money(item.unrealizedPnl))}</td>
+        <td data-label="累積報酬率" class="numeric ${pnlCls}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
         <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
         <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-trade-modal" data-trade-action="BUY" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">買</button><button type="button" data-action="open-trade-modal" data-trade-action="SELL" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">賣</button><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol)}">線圖</button></div></td>
       </tr>
@@ -3490,10 +3490,10 @@ function renderTransactions(items) {
       <td data-label="日期">${escapeHtml(item.date || "")}</td>
       <td data-label="類型">${escapeHtml(item.action || "")}</td>
       <td data-label="股票">${renderStockLink(item.symbol, item.name)}</td>
-      <td data-label="股數">${number(item.quantity)}</td>
-      <td data-label="價格">${number(item.price)}</td>
-      <td data-label="手續費">${number(item.fee)}</td>
-      <td data-label="稅">${number(item.tax)}</td>
+      <td data-label="股數" class="numeric">${number(item.quantity)}</td>
+      <td data-label="價格" class="numeric">${number(item.price)}</td>
+      <td data-label="手續費" class="numeric">${number(item.fee)}</td>
+      <td data-label="稅" class="numeric">${number(item.tax)}</td>
       <td data-label="備註">${escapeHtml(item.note || "")}</td>
       <td data-label="操作">${actionHtml}</td>
     </tr>
