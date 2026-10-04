@@ -45,7 +45,7 @@
         <button class="nav-btn" data-page="admin" id="navAdmin" hidden>帳號管理</button>
         <button class="nav-btn mobile-more-btn" id="btnMobileMore" type="button">更多</button>
       </nav>
-      <button type="button" class="sidebar-logout-btn" data-action="logout">登出</button>
+      <button type="button" class="sidebar-logout-btn btn-quiet" data-action="logout">登出</button>
     </aside>
 
     <main class="main">
@@ -56,10 +56,10 @@
           <div id="dashboardUpdateStatus" class="update-status">讀取更新狀態...</div>
         </div>
         <div class="top-actions">
-          <button id="btnUpdateDaily">更新盤後資料</button>
-          <button id="btnRunDerived" title="把技術指標與所有衍生快取排入背景分階段重算，完成後首頁自動更新（避免單次請求撞後端 6 分鐘上限）">重算指標</button>
-          <button id="btnBackfillHistory">回補歷史資料</button>
-          <button id="btnRefreshVersion">更新版本</button>
+          <button id="btnUpdateDaily" class="btn-secondary">更新盤後資料</button>
+          <button id="btnRunDerived" class="btn-secondary" title="把技術指標與所有衍生快取排入背景分階段重算，完成後首頁自動更新（避免單次請求撞後端 6 分鐘上限）">重算指標</button>
+          <button id="btnBackfillHistory" class="btn-secondary">回補歷史資料</button>
+          <button id="btnRefreshVersion" class="btn-secondary">更新版本</button>
           <button id="btnNotificationCenter" class="notification-button" type="button" aria-label="開啟通知中心">通知 <span id="notificationUnreadCount" class="notification-count" hidden>0</span></button>
           <div class="muted" id="apiStatus">尚未連線</div>
         </div>
@@ -232,8 +232,8 @@
             <div id="screenerMetaStatus" class="muted">正在讀取上市、上櫃及 ETF 資料狀態…</div>
           </div>
           <div class="screener-toolbar-actions">
-            <button id="btnRefreshScreenerDaily" type="button" hidden>更新今日資料</button>
-            <button id="btnBootstrapScreenerData" type="button" hidden>首次建立 80 日資料</button>
+            <button id="btnRefreshScreenerDaily" class="btn-secondary" type="button" hidden>更新今日資料</button>
+            <button id="btnBootstrapScreenerData" class="btn-secondary" type="button" hidden>首次建立 80 日資料</button>
           </div>
         </div>
 
@@ -246,7 +246,7 @@
           </div>
           <div id="screenerConditionBar" class="screener-condition-bar"></div>
           <div class="screener-run-bar">
-            <button id="btnStartScreener" type="button">開始選股</button>
+            <button id="btnStartScreener" class="btn-primary" type="button">開始選股</button>
           </div>
         </div>
 
@@ -287,7 +287,7 @@
             <h2>我的庫存</h2>
             <div id="portfolioStatus" class="muted">讀取最新庫存...</div>
           </div>
-          <button id="openQuickTradeBtn" type="button" data-action="open-trade-modal">＋ 快速買賣</button>
+          <button id="openQuickTradeBtn" class="btn-primary" type="button" data-action="open-trade-modal">＋ 快速買賣</button>
         </div>
 
         <div id="portfolioSummary" class="portfolio-summary-grid"></div>
@@ -297,7 +297,7 @@
             <div>
               <h2>持有部位</h2>
             </div>
-            <button id="btnRefreshPortfolio" type="button">重新計算</button>
+            <button id="btnRefreshPortfolio" class="btn-secondary" type="button">重新計算</button>
           </div>
           <div class="table-wrap">
             <table>
@@ -341,8 +341,8 @@
             <div><h2 id="analysisTitle">線圖分析</h2></div>
             <div class="inline-form">
               <input id="analysisSymbol" type="text" inputmode="numeric" aria-label="股票代號" placeholder="輸入股票代號，例如 006208" />
-              <button id="btnLoadAnalysis">查詢</button>
-              <button id="btnRefreshAnalysis" type="button">重新整理</button>
+              <button id="btnLoadAnalysis" class="btn-primary">查詢</button>
+              <button id="btnRefreshAnalysis" class="btn-secondary" type="button">重新整理</button>
             </div>
           </div>
         </div>

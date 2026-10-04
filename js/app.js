@@ -2514,8 +2514,8 @@ function renderCandidates(data) {
   document.getElementById("candidateSummary").innerHTML = [
     summaryCard("買入候選", rawBuyItems.length, "up"),
     summaryCard("賣出候選", rawSellItems.length, "down"),
-    summaryCard("資料日期", escapeHtml(data.dataDate || "-"), ""),
-    summaryCard("更新時間", escapeHtml(data.updatedAt || "-"), "")
+    summaryCard("資料日期", escapeHtml(data.dataDate || "-"), "metric-date"),
+    summaryCard("更新時間", escapeHtml(data.updatedAt || "-"), "metric-date")
   ].join("");
 
   document.getElementById("buyCandidatesBody").innerHTML = buyItems.length
@@ -2671,10 +2671,10 @@ function renderMarketCards(data) {
   cacheExplainContext({ symbol: "MARKET_AVERAGE", totalScore: average.value, trendText: mode, marketMode: mode });
 
   container.innerHTML = [
-    dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷", explainKey: "MARKET_MODE", explainSymbol: "TAIEX" }),
-    dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detailHtml: buildMarketIndicatorLine(marketState, taiex) }),
+    dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), surfaceClass: "metric-primary", meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷", explainKey: "MARKET_MODE", explainSymbol: "TAIEX" }),
+    dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, surfaceClass: "metric-primary", meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detailHtml: buildMarketIndicatorLine(marketState, taiex) }),
     dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, cls: "up", meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
-    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "metric-alert" : "warn", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
+    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "metric-alert" : "warn", surfaceClass: "metric-risk", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
     dashboardMetricCard({ title: "今日候選", value: `買入 ${number(signals.buyCount)} · 賣出 ${number(signals.sellCount)}`, meta: "查看技術條件明細", action: "signals" }),
     dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta, explainKey: "TECH_SCORE", explainSymbol: "MARKET_AVERAGE" })
   ].join("");
@@ -2686,9 +2686,9 @@ function dashboardMetricCard(options) {
     ${options.meta ? `<div class="dashboard-card-meta">${escapeHtml(options.meta)}</div>` : ""}
     ${options.detailHtml ? `<div class="dashboard-card-detail dashboard-indicator-links">${options.detailHtml}</div>` : (options.detail ? `<div class="dashboard-card-detail">${escapeHtml(options.detail)}</div>` : "")}
     ${options.action ? '<div class="dashboard-card-link">查看詳細 →</div>' : ""}`;
-  if (options.explainKey) return `<button type="button" class="card dashboard-metric-card is-action explainable-card" data-explain-type="indicator" data-explain-key="${escapeHtml(options.explainKey)}" data-symbol="${escapeHtml(options.explainSymbol || "")}">${content}</button>`;
-  if (!options.action) return `<article class="card dashboard-metric-card">${content}</article>`;
-  return `<button type="button" class="card dashboard-metric-card is-action" data-action="open-dashboard-detail" data-detail-type="${escapeHtml(options.action)}">${content}</button>`;
+  if (options.explainKey) return `<button type="button" class="card dashboard-metric-card ${escapeHtml(options.surfaceClass || "")} is-action explainable-card" data-explain-type="indicator" data-explain-key="${escapeHtml(options.explainKey)}" data-symbol="${escapeHtml(options.explainSymbol || "")}">${content}</button>`;
+  if (!options.action) return `<article class="card dashboard-metric-card ${escapeHtml(options.surfaceClass || "")}">${content}</article>`;
+  return `<button type="button" class="card dashboard-metric-card ${escapeHtml(options.surfaceClass || "")} is-action" data-action="open-dashboard-detail" data-detail-type="${escapeHtml(options.action)}">${content}</button>`;
 }
 
 function isBullishWatchItem(item) {
