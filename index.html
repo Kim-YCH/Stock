@@ -13,8 +13,8 @@
   <link rel="icon" href="icons/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="css/style.css?v=11.30-visual2" />
-  <link rel="stylesheet" href="css/mobile.css?v=11.30-visual2" />
+  <link rel="stylesheet" href="css/style.css?v=11.30-notifications1" />
+  <link rel="stylesheet" href="css/mobile.css?v=11.30-notifications1" />
   <script id="gsi-client" src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
@@ -466,6 +466,7 @@
         <button id="btnMarkAllNotificationsRead" type="button">全部已讀</button>
         <button id="btnClearNotificationSheet" class="danger-btn" type="button">清除通知</button>
       </div>
+      <p id="notificationWriteStatus" class="muted" role="status" aria-live="polite" hidden></p>
       <div id="notificationSheetBody" class="floating-sheet-body v11-list"></div>
       <button id="btnLoadMoreNotifications" type="button" hidden>載入更多</button>
     </section>
@@ -514,7 +515,7 @@
   <script defer src="js/config.js?v=11.30"></script>
   <script defer src="js/api.js?v=11.30"></script>
   <script defer src="js/indicator-explain.js?v=11.30"></script>
-  <script defer src="js/app.js?v=11.30-visual2"></script>
-  <script defer src="js/mobile-ui.js?v=11.30-visual2"></script>
+  <script defer src="js/app.js?v=11.30-notifications1"></script>
+  <script defer src="js/mobile-ui.js?v=11.30-notifications1"></script>
 </body>
 </html>

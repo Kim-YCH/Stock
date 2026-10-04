@@ -132,6 +132,7 @@ let currentWatchlistItems = [];
 let currentPortfolioItems = [];
 let portfolioTransactionsLoaded = false;
 let notificationCacheLoadedAt = 0;
+const notificationWriteState = { ids: new Set(), all: false, clearing: false, revision: 0, error: "", refreshNeeded: false };
 const watchlistSortState = { key: "", direction: "asc" };
 
 // PWA 殼層快取：只快取同源靜態資源，不碰後端 JSONP（見 service-worker.js）。
@@ -2463,7 +2464,15 @@ function renderDashboard(data) {
   renderMarketCards(data);
   renderDashboardV11Summary(data);
   renderWatchlist(data.watchlist || []);
-  if (data.notificationsSummary) updateNotificationBadge(data.notificationsSummary.unreadCount);
+  if (data.notificationsSummary) renderDashboardNotificationBadge(data.notificationsSummary);
+}
+
+function renderDashboardNotificationBadge(summary) {
+  if (notificationWriteBusy()) return;
+  const cached = pageDataCache.notifications;
+  // An old cached/in-flight dashboard must not undo a just-confirmed read.
+  if (cached && Date.now() - notificationCacheLoadedAt < 5 * 60 * 1000) updateNotificationBadge(cached.unreadCount);
+  else updateNotificationBadge(summary.unreadCount);
 }
 
 async function loadCandidates() {
@@ -4110,15 +4119,21 @@ function renderMarketSummary(data) {
 
 async function loadNotifications(options = {}) {
   const state = paginationState.notifications;
-  if (state.loading) return;
+  if (state.loading || notificationWriteBusy()) return;
+  const revision = notificationWriteState.revision;
   const append = options.append === true;
   if (!append) state.offset = 0;
   const cached = pageDataCache.notifications;
   if (cached && !append) renderNotifications(cached, { stale: true });
   else if (!append) showLoading("notificationSheetBody", "通知載入中");
   state.loading = true;
+  updateNotificationWriteControls();
   try {
     const data = await Api.getNotifications({ limit: state.limit, offset: state.offset });
+    if (revision !== notificationWriteState.revision || notificationWriteBusy()) {
+      notificationWriteState.refreshNeeded = true;
+      return;
+    }
     const previousItems = append && cached ? cached.items || [] : [];
     const merged = Object.assign({}, data, { items: previousItems.concat(data.items || []) });
     pageDataCache.notifications = merged;
@@ -4128,11 +4143,17 @@ async function loadNotifications(options = {}) {
     renderNotifications(merged);
     updateNotificationBadge(data.unreadCount);
   } catch (err) {
+    if (revision !== notificationWriteState.revision) return;
     if (!cached) showPageError("notificationSheetBody", err);
     else setApiStatus("通知資料可能不是最新：" + err.message);
   } finally {
     state.loading = false;
     updateLoadMoreButton("btnLoadMoreNotifications", state.hasMore, false);
+    updateNotificationWriteControls();
+    if (notificationWriteState.refreshNeeded && !notificationWriteBusy()) {
+      notificationWriteState.refreshNeeded = false;
+      loadNotifications();
+    }
   }
 }
 
@@ -4149,19 +4170,67 @@ function renderNotifications(data) {
   </article>`;
   }).join("") || renderV11Empty("目前沒有通知");
   updateLoadMoreButton("btnLoadMoreNotifications", paginationState.notifications.hasMore, false);
+  updateNotificationWriteControls();
+}
+
+function notificationWriteBusy() {
+  return notificationWriteState.all || notificationWriteState.clearing || notificationWriteState.ids.size > 0;
+}
+
+function updateNotificationWriteControls() {
+  const state = notificationWriteState, busy = notificationWriteBusy(), loading = paginationState.notifications.loading;
+  const cached = pageDataCache.notifications;
+  document.querySelectorAll('[data-action="mark-notification-read"]').forEach(button => {
+    button.disabled = busy;
+    button.textContent = state.ids.has(String(button.dataset.id)) ? "處理中…" : "標為已讀";
+    button.setAttribute("aria-busy", state.ids.has(String(button.dataset.id)) ? "true" : "false");
+  });
+  [["btnMarkAllNotificationsRead", state.all, "全部已讀"], ["btnClearNotificationSheet", state.clearing, "清除通知"]].forEach(([id, pending, label]) => {
+    const button = document.getElementById(id);
+    if (!button) return;
+    button.disabled = busy || loading || !cached || (id === "btnMarkAllNotificationsRead" ? Number(cached.unreadCount) === 0 : !(cached.items || []).length);
+    button.textContent = pending ? "處理中…" : label;
+    button.setAttribute("aria-busy", pending ? "true" : "false");
+  });
+  const more = document.getElementById("btnLoadMoreNotifications");
+  if (more) more.disabled = busy || loading;
+  const status = document.getElementById("notificationWriteStatus");
+  if (status) {
+    status.textContent = busy ? "正在更新通知，完成後會自動顯示結果…" : state.error;
+    status.hidden = !status.textContent;
+  }
+}
+
+function finishNotificationWrite() {
+  notificationWriteState.revision++;
+  updateNotificationWriteControls();
+  if (notificationWriteState.refreshNeeded && !paginationState.notifications.loading) {
+    notificationWriteState.refreshNeeded = false;
+    loadNotifications();
+  }
 }
 
 async function clearV11Notifications() {
-  if (!Api.clearNotifications) return;
+  if (!Api.clearNotifications || notificationWriteBusy() || paginationState.notifications.loading) return;
+  if (!pageDataCache.notifications || !(pageDataCache.notifications.items || []).length) return;
+  notificationWriteState.clearing = true;
+  notificationWriteState.error = "";
+  notificationWriteState.revision++;
+  updateNotificationWriteControls();
   try {
     await Api.clearNotifications();
     pageDataCache.notifications = { ok: true, items: [], unreadCount: 0 };
     notificationCacheLoadedAt = Date.now();
     paginationState.notifications.offset = 0;
+    paginationState.notifications.hasMore = false;
     updateNotificationBadge(0);
     renderNotifications({ items: [], unreadCount: 0 });
   } catch (err) {
+    notificationWriteState.error = "清除通知失敗：" + err.message;
     showToast("清除通知失敗：" + err.message, "error");
+  } finally {
+    notificationWriteState.clearing = false;
+    finishNotificationWrite();
   }
 }
 
@@ -4182,16 +4251,28 @@ function closeNotificationSheet() {
 }
 
 async function markAllNotificationsRead() {
-  if (!Api.markAllNotificationsRead) return;
+  if (!Api.markAllNotificationsRead || notificationWriteBusy() || paginationState.notifications.loading) return;
+  const cached = pageDataCache.notifications;
+  if (!cached || Number(cached.unreadCount) === 0) return;
+  notificationWriteState.all = true;
+  notificationWriteState.error = "";
+  notificationWriteState.revision++;
+  updateNotificationWriteControls();
   try {
     const data = await Api.markAllNotificationsRead();
     pageDataCache.notifications = data;
     notificationCacheLoadedAt = Date.now();
+    paginationState.notifications.offset = (data.items || []).length;
+    paginationState.notifications.hasMore = Boolean(data.hasMore);
     renderNotifications(data);
     updateNotificationBadge(0);
     showToast("通知已全部標為已讀", "success");
   } catch (err) {
+    notificationWriteState.error = "更新通知失敗：" + err.message;
     showToast("更新通知失敗：" + err.message, "error");
+  } finally {
+    notificationWriteState.all = false;
+    finishNotificationWrite();
   }
 }
 
@@ -4281,10 +4362,13 @@ function isNotificationRead(item) {
 
 async function loadNotificationSummary() {
   if (!Api.isConfigured() || !Api.getNotificationSummary) return;
+  const revision = notificationWriteState.revision;
   try {
     const data = await Api.getNotificationSummary();
+    if (revision !== notificationWriteState.revision || notificationWriteBusy()) return;
     updateNotificationBadge(data.unreadCount);
   } catch (err) {
+    if (revision !== notificationWriteState.revision || notificationWriteBusy()) return;
     updateNotificationBadge(0);
   }
 }
@@ -4298,7 +4382,13 @@ function updateNotificationBadge(count) {
 }
 
 async function markNotificationRead(id) {
-  if (!id) return;
+  id = String(id || "");
+  const item = ((pageDataCache.notifications || {}).items || []).find(item => String(item.id) === id);
+  if (!id || !item || isNotificationRead(item) || notificationWriteBusy()) return;
+  notificationWriteState.ids.add(id);
+  notificationWriteState.error = "";
+  notificationWriteState.revision++;
+  updateNotificationWriteControls();
   try {
     await Api.markNotificationRead(id);
     const cached = pageDataCache.notifications;
@@ -4310,7 +4400,11 @@ async function markNotificationRead(id) {
       updateNotificationBadge(cached.unreadCount);
     }
   } catch (err) {
+    notificationWriteState.error = "通知狀態更新失敗：" + err.message;
     setApiStatus("通知狀態更新失敗：" + err.message);
+  } finally {
+    notificationWriteState.ids.delete(id);
+    finishNotificationWrite();
   }
 }
 

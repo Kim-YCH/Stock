@@ -1799,6 +1799,11 @@ body.modal-open .explain-modal-body * {
   padding: 12px 20px 0;
 }
 
+#notificationWriteStatus {
+  margin: 12px 20px 0;
+  overflow-wrap: anywhere;
+}
+
 .trade-modal-form {
   max-height: calc(88vh - 88px);
   overflow-y: auto;
