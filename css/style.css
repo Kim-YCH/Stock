@@ -3192,3 +3192,8 @@ body.mobile-sheet-open {
   .table-wrap tbody tr:hover { background: rgba(56, 189, 248, .06); }
   .table-wrap td.numeric .explainable-value { text-align: right; }
 }
+
+@media (min-width: 651px) and (max-width: 1100px) {
+  .nav-btn:not(.mobile-more-btn) { padding: 10px; gap: 8px; }
+  .nav-label { white-space: nowrap; }
+}
