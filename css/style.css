@@ -3107,6 +3107,10 @@ body.mobile-sheet-open {
 }
 
 /* StockLab visual polish: presentation roles only; trading colours and events stay authoritative. */
+.nav-icon { width: 18px; height: 18px; flex: 0 0 18px; }
+.nav-label { min-width: 0; }
+.nav .nav-btn[hidden] { display: none; }
+.nav-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .dashboard-card-value.up { color: var(--red); }
 .dashboard-card-value.down { color: var(--green); }
 .dashboard-card-value.warn { color: var(--yellow); }
@@ -3135,6 +3139,10 @@ body.mobile-sheet-open {
 @media (min-width: 651px) {
   body { font-size: 14px; line-height: 1.5; }
   .sidebar { background: #0b1526; }
+  .nav-btn:not(.mobile-more-btn) { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .nav-btn:hover { background: #132339; color: var(--text); }
+  .nav-btn.active { background: #143354; color: #9bddff; box-shadow: inset 3px 0 var(--blue); }
+  .backend-version.is-mismatch { background: rgba(234, 179, 8, .045); border-color: rgba(234, 179, 8, .28); }
   .card, .panel, .dashboard-metric-card { border-radius: var(--radius-panel); }
   .card, .panel {
     background: linear-gradient(135deg, var(--surface-raised), var(--panel) 70%);

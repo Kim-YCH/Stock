@@ -21,6 +21,8 @@
   .sidebar > .sidebar-logout-btn { display: none; }
   .nav { gap: 2px; }
   .nav .nav-btn { min-height: 48px; font-size: 12px; padding: 6px 1px; border-radius: 10px; }
+  .nav .nav-btn .nav-icon { width: 18px; height: 18px; margin: 0 auto 3px; }
+  .nav .nav-btn .nav-label { display: block; line-height: 1.25; }
   .panel { padding: 14px; margin-bottom: 16px; }
   .panel h2 { font-size: 20px; }
   .panel-header { gap: 10px; margin-bottom: 12px; }
