@@ -2673,8 +2673,8 @@ function renderMarketCards(data) {
   container.innerHTML = [
     dashboardMetricCard({ title: "今日市場", value: mode, cls: marketModeClass(mode), surfaceClass: "metric-primary", meta: (marketState.reasonList || []).slice(0, 2).join(" · ") || "依盤後技術資料判斷", explainKey: "MARKET_MODE", explainSymbol: "TAIEX" }),
     dashboardMetricCard({ title: "加權指數", value: number(marketState.close || taiex.close), cls: changeClass, surfaceClass: "metric-primary", meta: `${changeArrow} ${number(Math.abs(changePercent))}% · ${mode}`, detailHtml: buildMarketIndicatorLine(marketState, taiex) }),
-    dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, cls: "up", meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
-    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "metric-alert" : "warn", surfaceClass: "metric-risk", meta: `${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
+    dashboardMetricCard({ title: "偏多股票", value: `${number(bullish.count)} / ${number(bullish.total)}`, meta: `偏多率 ${number(bullish.rate)}%`, action: "bullish" }),
+    dashboardMetricCard({ title: "風險提醒", value: `${number(risk.count)} 檔`, cls: risk.level === "high" ? "metric-alert" : (risk.level === "medium" ? "warn" : ""), surfaceClass: risk.level === "high" || risk.level === "medium" ? "metric-risk" : "", meta: `${risk.level === "high" ? "⚠ " : ""}${riskStars(risk.stars)} ${riskLevel}`, action: "risk" }),
     dashboardMetricCard({ title: "今日候選", value: `買入 ${number(signals.buyCount)} · 賣出 ${number(signals.sellCount)}`, meta: "查看技術條件明細", action: "signals" }),
     dashboardMetricCard({ title: "平均技術分數", value: `${number(average.value)} / 100`, cls: scoreClass(average.value), meta: averageMeta, explainKey: "TECH_SCORE", explainSymbol: "MARKET_AVERAGE" })
   ].join("");
@@ -3188,6 +3188,13 @@ async function loadPortfolio(options = {}) {
   }
 }
 
+// Presentation only: flat/missing numbers are not market gains or losses.
+function financialDirectionClass_(value) {
+  if (isBlankValue(value)) return "";
+  const amount = Number(value);
+  return !Number.isFinite(amount) || amount === 0 ? "" : (amount > 0 ? "up" : "down");
+}
+
 function renderPortfolioData(data) {
   const items = data.items || [];
   currentPortfolioItems = items.slice();
@@ -3213,20 +3220,21 @@ function renderPortfolioData(data) {
 
   document.getElementById("portfolioSummary").innerHTML = `
     ${summaryCard("庫存總市值", money(marketValue), "")}
-    ${summaryCard("今日損益", `${dailyPnl > 0 ? "+" : ""}${money(dailyPnl)}`, dailyPnl >= 0 ? "up" : "down")}
-    ${summaryCard("今日漲跌幅", `${dailyRate > 0 ? "+" : ""}${number(dailyRate)}%`, dailyRate >= 0 ? "up" : "down")}
-    ${summaryCard("未實現損益", `${unrealizedPnl > 0 ? "+" : ""}${money(unrealizedPnl)}`, unrealizedPnl >= 0 ? "up" : "down")}
-    ${summaryCard("未實現報酬率", `${unrealizedRate > 0 ? "+" : ""}${number(unrealizedRate)}%`, unrealizedRate >= 0 ? "up" : "down")}
-    ${summaryCard("已實現損益", `${realizedPnl > 0 ? "+" : ""}${money(realizedPnl)}`, realizedPnl >= 0 ? "up" : "down")}
-    ${summaryCard("總報酬", `${totalReturn > 0 ? "+" : ""}${money(totalReturn)}`, totalReturn >= 0 ? "up" : "down")}
+    ${summaryCard("今日損益", `${dailyPnl > 0 ? "+" : ""}${money(dailyPnl)}`, financialDirectionClass_(dailyPnl))}
+    ${summaryCard("今日漲跌幅", `${dailyRate > 0 ? "+" : ""}${number(dailyRate)}%`, financialDirectionClass_(dailyRate))}
+    ${summaryCard("未實現損益", `${unrealizedPnl > 0 ? "+" : ""}${money(unrealizedPnl)}`, financialDirectionClass_(unrealizedPnl))}
+    ${summaryCard("未實現報酬率", `${unrealizedRate > 0 ? "+" : ""}${number(unrealizedRate)}%`, financialDirectionClass_(unrealizedRate))}
+    ${summaryCard("已實現損益", `${realizedPnl > 0 ? "+" : ""}${money(realizedPnl)}`, financialDirectionClass_(realizedPnl))}
+    ${summaryCard("總報酬", `${totalReturn > 0 ? "+" : ""}${money(totalReturn)}`, financialDirectionClass_(totalReturn))}
     ${summaryCard("持有檔數", number(summary.holdingCount ?? items.length), "")}
   `;
 
   document.getElementById("portfolioBody").innerHTML = items.map(item => {
     cacheExplainContext(item);
     // 缺價時不要上漲跌色，否則「無資料」會被塗成上漲。
-    const pnlCls = isBlankValue(item.unrealizedPnl) ? "" : (Number(item.unrealizedPnl) >= 0 ? "up" : "down");
-    const dailyCls = Number(item.dailyChange || item.dailyPnl || 0) >= 0 ? "up" : "down";
+    const pnlCls = financialDirectionClass_(item.unrealizedPnl);
+    const dailyCls = financialDirectionClass_(item.dailyChange);
+    const dailyPnlCls = financialDirectionClass_(item.dailyPnl);
     const currentPrice = item.currentPrice ?? item.lastPrice;
     const hasPrevious = Number(item.previousClose || 0) > 0;
     return `
@@ -3235,11 +3243,11 @@ function renderPortfolioData(data) {
         <td data-label="股數" class="numeric">${number(item.quantity)}</td>
         <td data-label="平均成本" class="numeric">${number(item.avgCost)}</td>
         <td data-label="現價" class="numeric">${dashIfBlank(number(currentPrice))}</td>
-        <td data-label="今日漲跌" class="numeric ${dailyCls}">${hasPrevious ? `${Number(item.dailyChange) > 0 ? "+" : ""}${number(item.dailyChange)} (${Number(item.dailyChangePercent) > 0 ? "+" : ""}${number(item.dailyChangePercent)}%)` : "前日資料不足"}</td>
-        <td data-label="今日損益" class="numeric ${dailyCls}">${hasPrevious ? `${Number(item.dailyPnl) > 0 ? "+" : ""}${money(item.dailyPnl)}` : "-"}</td>
+        <td data-label="今日漲跌" class="numeric ${hasPrevious ? dailyCls : ""}">${hasPrevious ? `${Number(item.dailyChange) > 0 ? "+" : ""}${number(item.dailyChange)} (${Number(item.dailyChangePercent) > 0 ? "+" : ""}${number(item.dailyChangePercent)}%)` : "前日資料不足"}</td>
+        <td data-label="今日損益" class="numeric ${hasPrevious ? dailyPnlCls : ""}">${hasPrevious ? `${Number(item.dailyPnl) > 0 ? "+" : ""}${money(item.dailyPnl)}` : "-"}</td>
         <td data-label="市值" class="numeric">${dashIfBlank(money(item.marketValue))}</td>
         <td data-label="未實現損益" class="numeric ${pnlCls}">${dashIfBlank(money(item.unrealizedPnl))}</td>
-        <td data-label="累積報酬率" class="numeric ${pnlCls}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
+        <td data-label="累積報酬率" class="numeric ${financialDirectionClass_(item.unrealizedRate)}">${isBlankValue(item.unrealizedRate) ? "—" : `${number(item.unrealizedRate)}%`}</td>
         <td data-label="技術狀態">${explainableButton("TREND_TEXT", escapeHtml(item.trendText || "觀察"), item.symbol, `badge ${getBadgeClass(item.trendText || "觀察")}`)}</td>
         <td data-label="操作"><div class="portfolio-row-actions"><button type="button" data-action="open-trade-modal" data-trade-action="BUY" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">買</button><button type="button" data-action="open-trade-modal" data-trade-action="SELL" data-symbol="${escapeHtml(item.symbol)}" data-name="${escapeHtml(item.name || "")}" data-price="${escapeHtml(currentPrice || "")}">賣</button><button type="button" data-action="open-stock-detail" data-symbol="${escapeHtml(item.symbol)}">線圖</button></div></td>
       </tr>
@@ -3378,7 +3386,7 @@ function renderAnalysis(data, symbol) {
   ];
 
   document.getElementById("indicatorCards").innerHTML = cards.map(([label, value, key]) => `
-    <div class="metric">
+    <div class="metric${key === "OBV" ? " metric-wide" : ""}">
       <div class="label">${label}</div>
       ${key ? explainableButton(key, escapeHtml(String(value ?? "")), context.symbol || symbol, `num ${value === "尚未計算" || value === "無庫存" ? "num-muted" : ""}`) : `<div class="num ${value === "尚未計算" || value === "無庫存" ? "num-muted" : ""}">${escapeHtml(String(value ?? ""))}</div>`}
     </div>
