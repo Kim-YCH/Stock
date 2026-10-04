@@ -3115,6 +3115,9 @@ body.mobile-sheet-open {
 .dashboard-card-value.down { color: var(--green); }
 .dashboard-card-value.warn { color: var(--yellow); }
 .dashboard-card-value.metric-alert { color: var(--red); }
+.technical-field-group { margin-top: 18px; }
+.technical-field-group h3 { margin: 0 0 10px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.technical-field-group .explainable-value { font-variant-numeric: tabular-nums; }
 .btn-primary {
   background: #0879b8;
   color: #f2faff;

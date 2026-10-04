@@ -4187,6 +4187,27 @@ async function markAllNotificationsRead() {
   }
 }
 
+function groupTechnicalFields_(fields) {
+  const definitions = [
+    ["價格與趨勢", ["MA5", "MA20", "MA60", "EMA5", "EMA10", "EMA20", "EMA60", "ADX", "PLUS_DI", "MINUS_DI", "BIAS20", "SUPER_TREND", "HIGH20", "LOW20"]],
+    ["動能", ["RSI", "K9", "D9", "MACD", "MACD_HIST", "CCI", "WILLIAMS_R", "ROC5", "ROC20"]],
+    ["波動", ["BB_PERCENT_B", "BB_WIDTH", "ATR", "ATR_PERCENT", "DONCHIAN"]],
+    ["量能", ["VOLUME_RATIO", "VWAP20", "OBV", "MFI"]],
+    ["綜合評分", ["TECH_SCORE", "TREND_SCORE", "MOMENTUM_SCORE", "RISK_SCORE", "BREAKOUT_SCORE", "VOLATILITY_SCORE"]]
+  ];
+  const groups = definitions.map(([title, keys]) => ({ title, keys, fields: [] }));
+  const other = { title: "其他指標", fields: [] };
+  fields.forEach(field => (groups.find(group => group.keys.includes(field[2])) || other).fields.push(field));
+  return [...groups, other].filter(group => group.fields.length).map(({ title, fields }) => ({ title, fields }));
+}
+
+function renderTechnicalFieldGroups_(fields, symbol) {
+  return groupTechnicalFields_(fields).map(group => `
+    <section class="technical-field-group"><h3>${escapeHtml(group.title)}</h3>
+      <div class="v11-grid compact technical-detail-grid">${group.fields.map(([label, value, key]) => `<div class="v11-card key-value"><span>${escapeHtml(label)}</span>${explainableButton(key, escapeHtml(value === undefined || value === null || value === "" ? "-" : (typeof value === "number" ? number(value) : value)), symbol)}</div>`).join("")}</div>
+    </section>`).join("");
+}
+
 function renderStockDetail(data) {
   if (!data || data.ok === false) {
     showPageError("analysisDetailBody", new Error((data && data.message) || "股票詳細資料讀取失敗"));
@@ -4218,7 +4239,7 @@ function renderStockDetail(data) {
   document.getElementById("analysisDetailBody").innerHTML = `
     <section class="panel"><div class="panel-header"><div><h2>指標詳細資料</h2><div class="muted">點擊任一指標查看白話說明與目前數值原因。</div></div></div>
       <div class="signal-chip-row">${renderSignalChips(signalChips, symbol)}</div>
-      <div class="v11-grid compact technical-detail-grid">${technicalFields.map(([label, value, key]) => `<div class="v11-card key-value"><span>${escapeHtml(label)}</span>${explainableButton(key, escapeHtml(value === undefined || value === null || value === "" ? "-" : (typeof value === "number" ? number(value) : value)), symbol)}</div>`).join("")}</div>
+      ${renderTechnicalFieldGroups_(technicalFields, symbol)}
     </section>
     <section class="v11-card"><strong>系統分析</strong><p>${escapeHtml(data.analysisText || "尚無分析文字")}</p></section>
     <section class="v11-card"><strong>持倉摘要</strong><p>${Number(portfolio.quantity || 0) > 0 ? "目前持有" : "目前未持有"} · 股數 ${number(portfolio.quantity)} · 平均成本 ${number(portfolio.avgCost)} · 未實現損益 ${money(portfolio.unrealizedPnl)} (${number(portfolio.unrealizedRate)}%)</p></section>`;
